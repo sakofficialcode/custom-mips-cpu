@@ -62,6 +62,9 @@ module processor(
 	input [31:0] data_readRegA, data_readRegB;
 
 	/* YOUR CODE STARTS HERE */
+
+    wire [31:0] nop;
+    assign nop = 32'b0;
 	
     // FETCH
 
@@ -70,8 +73,10 @@ module processor(
 
     alu pcIncrement(.data_operandA(fdpc_out), .data_operandB(32'b1), .ctrl_ALUopcode(5'b0), .ctrl_shiftamt(5'b0), .data_result(pcIncremented), .isNotEqual(), .isLessThan(), .overflow());
 
+    wire [31:0] nextPC;
+    assign nextPC = (d_isBEX & |(32'b0^data_readRegA)) ? {{5'b0}, fdinsn_out[26:0]} : (e_isJ | e_isJAL) ? {{5'b0}, dxinsn_out[26:0]} : e_isJR ? dxa_out : pcIncremented;
     
-    register #(.WIDTH(32)) FD_PC (.clock(clock), .reset(reset), .enable(1'b1), .in(pcIncremented), .out(fdpc_out));
+    register #(.WIDTH(32)) FD_PC (.clock(clock), .reset(reset), .enable(1'b1), .in(nextPC), .out(fdpc_out));
 
     assign address_imem = fdpc_out;
 
@@ -80,9 +85,14 @@ module processor(
 
     // DECODE
 
-    // Decode
-    assign ctrl_readRegA = fdinsn_out[21:17];
-    assign ctrl_readRegB = fdinsn_out[16:12];
+    wire d_isSW, d_isBEX, d_isJR;
+    assign d_isSW = ~|(5'b00111^fdinsn_out[31:27]);
+    assign d_isBEX = ~|(5'b10110^fdinsn_out[31:27]);
+    assign d_isJR = ~|(5'b00100^fdinsn_out[31:27]);
+
+    // Decode   
+    assign ctrl_readRegA = d_isBEX ? 5'b11110 : d_isJR ? fdinsn_out[26:22] : fdinsn_out[21:17];
+    assign ctrl_readRegB = d_isSW ? fdinsn_out[26:22] :  fdinsn_out[16:12];
 
     // Latch
     wire [31:0] dxa_out;
@@ -94,17 +104,24 @@ module processor(
     wire [31:0] dxinsn_out;
     register #(.WIDTH(32)) DX_INSN (.clock(~clock), .reset(reset), .enable(1'b1), .in(fdinsn_out), .out(dxinsn_out));
 
+    wire [31:0] dxpc_out;
+    register #(.WIDTH(32)) DX_PC (.clock(clock), .reset(reset), .enable(1'b1), .in(fdpc_out), .out(dxpc_out));
+
     // EXECUTE
 
-    wire isI;
-    assign isI = ~|(5'b00101 ^ dxinsn_out[31:27]);
+    wire e_isI, e_isJ, e_isJAL, e_isJR;
+    assign e_isI = ~|(5'b00101 ^ dxinsn_out[31:27]) | ~|(5'b01000 ^ dxinsn_out[31:27]) | ~|(5'b00111 ^ dxinsn_out[31:27]);
+    assign e_isJ = ~|(5'b00001^dxinsn_out[31:27]);
+    assign e_isJAL = ~|(5'b00011^dxinsn_out[31:27]);
+    assign e_isJR = ~|(5'b00100^dxinsn_out[31:27]);
 
     wire [31:0] aluOut;
     wire [31:0] immediate;
     assign immediate = {{15{dxinsn_out[16]}}, dxinsn_out[16:0]};
 
-    alu ALU(.data_operandA(dxa_out), .data_operandB(isI ? immediate : dxb_out), .ctrl_ALUopcode(isI ? 5'b0 : dxinsn_out[6:2]), .ctrl_shiftamt(dxinsn_out[11:7]), .data_result(aluOut), .isNotEqual(), .isLessThan(), .overflow());
+    alu ALU(.data_operandA(e_isJAL ? dxpc_out : dxa_out), .data_operandB(e_isI ? immediate : e_isJAL ? 32'hFFFFFFFF : dxb_out), .ctrl_ALUopcode((e_isI | e_isJAL) ? 5'b0 : dxinsn_out[6:2]), .ctrl_shiftamt(dxinsn_out[11:7]), .data_result(aluOut), .isNotEqual(), .isLessThan(), .overflow());
 
+    // Latch
     wire [31:0] xmo_out;
     register #(.WIDTH(32)) XM_O (.clock(~clock), .reset(reset), .enable(1'b1), .in(aluOut), .out(xmo_out));
 
@@ -116,25 +133,33 @@ module processor(
 
     // MEMORY
 
-    // placeholder
-    wire [31:0] memory_out;
-    assign memory_out = xmb_out;
+
+    assign address_dmem = xmo_out;
+    assign data = xmb_out;
+    assign wren = ~|(5'b00111^xminsn_out[31:27]);
 
     wire [31:0] mwo_out;
     register #(.WIDTH(32)) MW_O (.clock(~clock), .reset(reset), .enable(1'b1), .in(xmo_out), .out(mwo_out));
 
     wire [31:0] mwd_out;
-    register #(.WIDTH(32)) MW_D (.clock(~clock), .reset(reset), .enable(1'b1), .in(memory_out), .out(mwd_out));
+    register #(.WIDTH(32)) MW_D (.clock(~clock), .reset(reset), .enable(1'b1), .in(q_dmem), .out(mwd_out));
 
     wire [31:0] mwinsn_out;
     register #(.WIDTH(32)) MW_INSN (.clock(~clock), .reset(reset), .enable(1'b1), .in(xminsn_out), .out(mwinsn_out));
 
     // WRITEBACK
-    assign ctrl_writeReg = mwinsn_out[26:22];
+    wire w_isJAL, w_isSETX, w_isLW;
+    assign w_isJAL = ~|(5'b00011^mwinsn_out[31:27]);
+    assign w_isSETX = ~|(5'b10101^mwinsn_out[31:27]);
+    assign w_isLW = ~|(5'b01000^mwinsn_out[31:27]);
 
-    assign data_writeReg = mwo_out;
 
-    assign ctrl_writeEnable = 1'b1;
+    assign ctrl_writeReg = w_isJAL ? 5'b11111 : w_isSETX ? 5'b11110 : mwinsn_out[26:22];
+
+    assign data_writeReg = w_isSETX ? {{5'b0},mwinsn_out[26:0]} : w_isLW ? mwd_out : mwo_out;
+    //assign data_writeReg = w_isSETX ? 32'b1 : mwo_out;
+
+    assign ctrl_writeEnable = ~|(5'b00000^mwinsn_out[31:27]) | ~|(5'b00101^mwinsn_out[31:27]) | w_isJAL | w_isSETX | w_isLW;
 
 
 
