@@ -65,71 +65,119 @@ module processor(
 
     wire [31:0] nop;
     assign nop = 32'b0;
+
+    wire stall;
+    //assign stall = 1'b0;
+
 	
     // FETCH
 
     wire [31:0] fdpc_out;
     wire [31:0] pcIncremented;
 
-    alu pcIncrement(.data_operandA(fdpc_out), .data_operandB(32'b1), .ctrl_ALUopcode(5'b0), .ctrl_shiftamt(5'b0), .data_result(pcIncremented), .isNotEqual(), .isLessThan(), .overflow());
+    wire branch;
+    wire [31:0] branch_address;
+
+    assign branch = (x_isBNE & x_isNE) | (x_isBLT & x_isLT);
+    assign branch_address = x_Branch;
+
+    alu pcIncrement(.data_operandA( fdpc_out), .data_operandB(32'b1), .ctrl_ALUopcode(5'b0), .ctrl_shiftamt(5'b0), .data_result(pcIncremented), .isNotEqual(), .isLessThan(), .overflow());
 
     wire [31:0] nextPC;
-    assign nextPC = (d_isBEX & |(32'b0^data_readRegA)) ? {{5'b0}, fdinsn_out[26:0]} : (e_isJ | e_isJAL) ? {{5'b0}, dxinsn_out[26:0]} : e_isJR ? dxa_out : pcIncremented;
+    wire BEXTaken, x_isJ, x_isJAL, x_isJR;
+    assign BEXTaken = d_isBEX & |(32'b0^data_readRegA);
+    assign nextPC = BEXTaken ? {{5'b0}, fdinsn_out[26:0]} : (x_isJ | x_isJAL) ? {{5'b0}, dxinsn_out[26:0]} : x_isJR ? dxa_out : branch ? branch_address : pcIncremented;
+
     
-    register #(.WIDTH(32)) FD_PC (.clock(clock), .reset(reset), .enable(1'b1), .in(nextPC), .out(fdpc_out));
+    
+    register #(.WIDTH(32)) FD_PC (.clock(~clock), .reset(reset), .enable(~stall), .in(nextPC), .out(fdpc_out));
 
     assign address_imem = fdpc_out;
 
     wire [31:0] fdinsn_out;
-    register #(.WIDTH(32)) FD_INSN (.clock(~clock), .reset(reset), .enable(1'b1), .in(q_imem), .out(fdinsn_out));
+    register #(.WIDTH(32)) FD_INSN (.clock(~clock), .reset(reset), .enable(~stall), .in((BEXTaken | x_isJ | x_isJAL | x_isJR | branch) ? nop : q_imem), .out(fdinsn_out));
 
     // DECODE
 
-    wire d_isSW, d_isBEX, d_isJR;
+    wire d_isSW, d_isBEX, d_isJR, d_isBNE, d_isBLT, d_flush;
     assign d_isSW = ~|(5'b00111^fdinsn_out[31:27]);
     assign d_isBEX = ~|(5'b10110^fdinsn_out[31:27]);
     assign d_isJR = ~|(5'b00100^fdinsn_out[31:27]);
+    assign d_isBNE = ~|(5'b00010^fdinsn_out[31:27]);
+    assign d_isBLT = ~|(5'b00110^fdinsn_out[31:27]);
+
 
     // Decode   
-    assign ctrl_readRegA = d_isBEX ? 5'b11110 : d_isJR ? fdinsn_out[26:22] : fdinsn_out[21:17];
-    assign ctrl_readRegB = d_isSW ? fdinsn_out[26:22] :  fdinsn_out[16:12];
+    assign ctrl_readRegA = d_isBEX ? 5'b11110 : (d_isJR | d_isBNE | d_isBLT) ? fdinsn_out[26:22] : fdinsn_out[21:17];
+    assign ctrl_readRegB = d_isSW ? fdinsn_out[26:22] : (d_isBNE | d_isBLT) ? fdinsn_out[21:17] : fdinsn_out[16:12];
 
     // Latch
     wire [31:0] dxa_out;
-    register #(.WIDTH(32)) DX_A (.clock(~clock), .reset(reset), .enable(1'b1), .in(data_readRegA), .out(dxa_out));
+    register #(.WIDTH(32)) DX_A (.clock(~clock), .reset(reset), .enable(~stall), .in(data_readRegA), .out(dxa_out));
 
     wire [31:0] dxb_out;
-    register #(.WIDTH(32)) DX_B (.clock(~clock), .reset(reset), .enable(1'b1), .in(data_readRegB), .out(dxb_out));
+    register #(.WIDTH(32)) DX_B (.clock(~clock), .reset(reset), .enable(~stall), .in(data_readRegB), .out(dxb_out));
 
     wire [31:0] dxinsn_out;
-    register #(.WIDTH(32)) DX_INSN (.clock(~clock), .reset(reset), .enable(1'b1), .in(fdinsn_out), .out(dxinsn_out));
+    register #(.WIDTH(32)) DX_INSN (.clock(~clock), .reset(reset), .enable(~stall), .in((x_isJ | x_isJAL | x_isJR | branch) ? nop : fdinsn_out), .out(dxinsn_out));
 
     wire [31:0] dxpc_out;
-    register #(.WIDTH(32)) DX_PC (.clock(clock), .reset(reset), .enable(1'b1), .in(fdpc_out), .out(dxpc_out));
+    register #(.WIDTH(32)) DX_PC (.clock(~clock), .reset(reset), .enable(~stall), .in(fdpc_out), .out(dxpc_out));
 
     // EXECUTE
 
-    wire e_isI, e_isJ, e_isJAL, e_isJR;
-    assign e_isI = ~|(5'b00101 ^ dxinsn_out[31:27]) | ~|(5'b01000 ^ dxinsn_out[31:27]) | ~|(5'b00111 ^ dxinsn_out[31:27]);
-    assign e_isJ = ~|(5'b00001^dxinsn_out[31:27]);
-    assign e_isJAL = ~|(5'b00011^dxinsn_out[31:27]);
-    assign e_isJR = ~|(5'b00100^dxinsn_out[31:27]);
+    wire x_isI, x_isBNE, x_isBLT, x_isALU, x_isMult, x_isDiv;
+    assign x_isI = ~|(5'b00101 ^ dxinsn_out[31:27]) | ~|(5'b01000 ^ dxinsn_out[31:27]) | ~|(5'b00111 ^ dxinsn_out[31:27]);
+    assign x_isJ = ~|(5'b00001^dxinsn_out[31:27]);
+    assign x_isJAL = ~|(5'b00011^dxinsn_out[31:27]);
+    assign x_isJR = ~|(5'b00100^dxinsn_out[31:27]);
+    assign x_isBNE = ~|(5'b00010^dxinsn_out[31:27]);
+    assign x_isBLT = ~|(5'b00110^dxinsn_out[31:27]);
+    assign x_isALU = ~|(5'b00000^dxinsn_out[31:27]);
+    assign x_isMult = x_isALU & ~|(5'b00110^dxinsn_out[6:2]);
+    assign x_isDiv = x_isALU & ~|(5'b00111^dxinsn_out[6:2]);
 
-    wire [31:0] aluOut;
+    wire [4:0] aluOp;
+    assign aluOp = dxinsn_out[6:2];
+
+
+    wire [31:0] aluOut, x_Branch;
+    wire x_isNE, x_isLT, x_overflow;
     wire [31:0] immediate;
     assign immediate = {{15{dxinsn_out[16]}}, dxinsn_out[16:0]};
 
-    alu ALU(.data_operandA(e_isJAL ? dxpc_out : dxa_out), .data_operandB(e_isI ? immediate : e_isJAL ? 32'hFFFFFFFF : dxb_out), .ctrl_ALUopcode((e_isI | e_isJAL) ? 5'b0 : dxinsn_out[6:2]), .ctrl_shiftamt(dxinsn_out[11:7]), .data_result(aluOut), .isNotEqual(), .isLessThan(), .overflow());
+    alu ALU(.data_operandA(x_isJAL ? dxpc_out : dxa_out), .data_operandB(x_isI ? immediate : x_isJAL ? 32'b0 : dxb_out), .ctrl_ALUopcode((x_isI | x_isJAL) ? 5'b0 : aluOp), .ctrl_shiftamt(dxinsn_out[11:7]), .data_result(aluOut), .isNotEqual(x_isNE), .isLessThan(x_isLT), .overflow(x_overflow));
+
+    alu XBRANCH(.data_operandA(dxpc_out), .data_operandB(immediate), .ctrl_ALUopcode(5'b0), .ctrl_shiftamt(5'b0), .data_result(x_Branch), .isNotEqual(), .isLessThan(), .overflow());
+
+    wire [31:0] multdiv_out;
+    wire multdiv_busy, multdiv_ready, multdiv_exception;
+
+    dffe_ref multdivDff(.q(multdiv_busy), .d(1'b1), .clk(clock), .en((x_isMult | x_isDiv) & ~multdiv_busy), .clr(multdiv_ready));
+
+    assign stall = ((x_isMult | x_isDiv) | multdiv_busy) & ~multdiv_ready;
+
+    wire ctrl_MULT, ctrl_DIV;
+    assign ctrl_MULT = x_isMult & ~multdiv_busy & ~multdiv_ready;
+    assign ctrl_DIV = x_isDiv & ~multdiv_busy & ~multdiv_ready;
+
+    multdiv MULTDIV(.data_operandA(dxa_out), .data_operandB(dxb_out), .ctrl_MULT(ctrl_MULT), .ctrl_DIV(ctrl_DIV), .clock(clock), .data_result(multdiv_out), .data_exception(multdiv_exception), .data_resultRDY(multdiv_ready));
+
+    wire [31:0] x_exception;
+    assign x_exception = x_overflow ? x_isI ? 32'h00000002 : ~|(5'b0^aluOp) ? 32'h00000001 : ~|(5'b00001^aluOp) ? 32'h00000003 :  32'b0 : (multdiv_exception & multdiv_ready) ? ~|(5'b00110^aluOp) ? 32'h00000004 : ~|(5'b00111^aluOp) ? 32'h00000005 : 32'b0  : 32'b0;
 
     // Latch
     wire [31:0] xmo_out;
-    register #(.WIDTH(32)) XM_O (.clock(~clock), .reset(reset), .enable(1'b1), .in(aluOut), .out(xmo_out));
+    register #(.WIDTH(32)) XM_O (.clock(~clock), .reset(reset), .enable(1'b1), .in(multdiv_ready ? multdiv_out : aluOut), .out(xmo_out));
 
     wire [31:0] xmb_out;
     register #(.WIDTH(32)) XM_B (.clock(~clock), .reset(reset), .enable(1'b1), .in(dxb_out), .out(xmb_out));
 
     wire [31:0] xminsn_out;
-    register #(.WIDTH(32)) XM_INSN (.clock(~clock), .reset(reset), .enable(1'b1), .in(dxinsn_out), .out(xminsn_out));
+    register #(.WIDTH(32)) XM_INSN (.clock(~clock), .reset(reset), .enable(1'b1), .in((stall & ~multdiv_ready) ? nop : dxinsn_out), .out(xminsn_out));
+
+    wire [31:0] xmexception_out;
+    register #(.WIDTH(32)) XM_EXCEPTION (.clock(~clock), .reset(reset), .enable(1'b1), .in(x_exception), .out(xmexception_out));
 
     // MEMORY
 
@@ -147,19 +195,23 @@ module processor(
     wire [31:0] mwinsn_out;
     register #(.WIDTH(32)) MW_INSN (.clock(~clock), .reset(reset), .enable(1'b1), .in(xminsn_out), .out(mwinsn_out));
 
+    wire [31:0] mwexception_out;
+    register #(.WIDTH(32)) MW_EXCEPTION (.clock(~clock), .reset(reset), .enable(1'b1), .in(xmexception_out), .out(mwexception_out));
+
     // WRITEBACK
-    wire w_isJAL, w_isSETX, w_isLW;
+    wire w_isJAL, w_isSETX, w_isLW, w_isException;
     assign w_isJAL = ~|(5'b00011^mwinsn_out[31:27]);
     assign w_isSETX = ~|(5'b10101^mwinsn_out[31:27]);
     assign w_isLW = ~|(5'b01000^mwinsn_out[31:27]);
+    assign w_isException = |(mwexception_out);
 
 
-    assign ctrl_writeReg = w_isJAL ? 5'b11111 : w_isSETX ? 5'b11110 : mwinsn_out[26:22];
+    assign ctrl_writeReg = w_isJAL ? 5'b11111 : (w_isSETX | w_isException) ? 5'b11110 : mwinsn_out[26:22];
 
-    assign data_writeReg = w_isSETX ? {{5'b0},mwinsn_out[26:0]} : w_isLW ? mwd_out : mwo_out;
+    assign data_writeReg = w_isSETX ? {{5'b0},mwinsn_out[26:0]} : w_isLW ? mwd_out : w_isException ? mwexception_out : mwo_out;
     //assign data_writeReg = w_isSETX ? 32'b1 : mwo_out;
 
-    assign ctrl_writeEnable = ~|(5'b00000^mwinsn_out[31:27]) | ~|(5'b00101^mwinsn_out[31:27]) | w_isJAL | w_isSETX | w_isLW;
+    assign ctrl_writeEnable = ~|(5'b00000^mwinsn_out[31:27]) | ~|(5'b00101^mwinsn_out[31:27]) | w_isJAL | w_isSETX | w_isLW | w_isException;
 
 
 
