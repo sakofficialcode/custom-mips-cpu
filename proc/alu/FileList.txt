@@ -1,0 +1,6 @@
+add_8.v
+alu.v
+alu_tb.v
+mux_2.v
+mux_4.v
+mux_8.v

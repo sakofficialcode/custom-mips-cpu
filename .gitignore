@@ -1,0 +1,34 @@
+# Icarus Verilog simulation artifacts
+*.vvp
+*.vcd
+*.lxt
+*.lxt2
+*.fst
+
+# proc: generated memory image and test outputs
+/proc/timing.mem
+*_actual.csv
+*_diff.csv
+
+# proc: compiled simulator binaries
+/proc/alu/ALU
+/proc/multdiv/multdiv
+/proc/regfile/regfile
+
+# Vivado generated output (regenerable from the .xpr and .srcs)
+/final-project/final_project-vivado.runs/
+/final-project/final_project-vivado.cache/
+/final-project/final_project-vivado.hw/
+/final-project/final_project-vivado.ip_user_files/
+/final-project/final_project-vivado.gen/
+.Xil/
+*.jou
+*.str
+vivado*.log
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Windows alternate data streams
+*:Zone.Identifier

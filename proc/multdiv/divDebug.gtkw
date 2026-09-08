@@ -1,0 +1,32 @@
+[*]
+[*] GTKWave Analyzer v3.3.104 (w)1999-2020 BSI
+[*] Fri Feb 20 06:12:13 2026
+[*]
+[dumpfile] "/home/siddh/multdiv/divbasic.vcd"
+[dumpfile_mtime] "Fri Feb 20 06:11:00 2026"
+[dumpfile_size] 2280440
+[savefile] "/home/siddh/multdiv/divDebug.gtkw"
+[timestart] 0
+[size] 1000 600
+[pos] -1 -1
+*0.000000 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[treeopen] multdiv_tb.
+[sst_width] 214
+[signals_width] 182
+[sst_expanded] 1
+[sst_vpaned_height] 151
+@28
+multdiv_tb.clock
+multdiv_tb.tester.ctrl_DIV
+@22
+multdiv_tb.tester.data_operandA[31:0]
+multdiv_tb.tester.data_operandB[31:0]
+@28
+multdiv_tb.tester.data_exception
+multdiv_tb.tester.data_resultRDY
+@22
+multdiv_tb.tester.data_result[31:0]
+@23
+multdiv_tb.exp_result[31:0]
+[pattern_trace] 1
+[pattern_trace] 0
