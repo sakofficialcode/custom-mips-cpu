@@ -1,0 +1,6 @@
+# Which copy to compile when a module file exists in several places with different contents.
+# Format: <filename> <path relative to RTL_DIR>
+#
+# processor.v and multdiv.v instantiate `register #(.WIDTH(32))`; only the multdiv copy has the
+# WIDTH parameter. Its default is 32, so regfile.v's unparameterized uses still get 32 bits.
+register.v multdiv/register.v

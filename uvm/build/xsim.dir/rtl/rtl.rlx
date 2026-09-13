@@ -1,0 +1,17 @@
+0.7
+2020.2
+Nov  8 2024
+22:36:55
+/home/siddh/proc-toolchain/main/proc/RAM.v,1788873392,verilog,,/home/siddh/proc-toolchain/main/proc/regfile/regfile.v,,RAM,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/ROM.v,1788873392,verilog,,/home/siddh/proc-toolchain/main/proc/tff.v,,ROM,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/alu/add_8.v,1788872629,verilog,,/home/siddh/proc-toolchain/main/proc/alu/alu.v,,add_8,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/alu/alu.v,1788872629,verilog,,/home/siddh/proc-toolchain/main/proc/dffe_ref.v,,alu,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/dffe_ref.v,1788873392,verilog,,/home/siddh/proc-toolchain/main/proc/multdiv/multdiv.v,,dffe_ref,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/multdiv/multdiv.v,1788872643,verilog,,/home/siddh/proc-toolchain/main/proc/mux_2.v,,multdiv,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/multdiv/register.v,1788872643,verilog,,/home/siddh/proc-toolchain/main/proc/ROM.v,,register,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/mux_2.v,1788873392,verilog,,/home/siddh/proc-toolchain/main/proc/mux_4.v,,mux_2,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/mux_4.v,1788873392,verilog,,/home/siddh/proc-toolchain/main/proc/mux_8.v,,mux_4,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/mux_8.v,1788873392,verilog,,/home/siddh/proc-toolchain/main/proc/processor.v,,mux_8,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/processor.v,1789329191,verilog,,/home/siddh/proc-toolchain/main/proc/RAM.v,,processor,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/regfile/regfile.v,1772132241,verilog,,/home/siddh/proc-toolchain/main/proc/multdiv/register.v,,regfile,,,,,,,,
+/home/siddh/proc-toolchain/main/proc/tff.v,1788873392,verilog,,,,tff,,,,,,,,
