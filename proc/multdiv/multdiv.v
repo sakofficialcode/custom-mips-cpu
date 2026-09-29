@@ -1,11 +1,11 @@
 module multdiv(
 	data_operandA, data_operandB, 
 	ctrl_MULT, ctrl_DIV, 
-	clock, 
+	clock, reset, 
 	data_result, data_exception, data_resultRDY);
 
     input [31:0] data_operandA, data_operandB;
-    input ctrl_MULT, ctrl_DIV, clock;
+    input ctrl_MULT, ctrl_DIV, clock, reset;
 
     output [31:0] data_result;
     output data_exception, data_resultRDY;
@@ -19,6 +19,10 @@ module multdiv(
     register #(.WIDTH(32)) BReg(.clock(clock), .in(data_operandB), .out(stable_B), .enable(ctrl_DIV | ctrl_MULT), .reset());
 
     
+        wire A_is_min, B_is_min;
+    register #(.WIDTH(1)) AMinReg(.clock(clock), .in(stable_A[31] & ~(|stable_A[30:0])), .out(A_is_min), .enable(1'b1), .reset());
+    register #(.WIDTH(1)) BMinReg(.clock(clock), .in(stable_B[31] & ~(|stable_B[30:0])), .out(B_is_min), .enable(1'b1), .reset());
+
     // Store Operation
     wire multOp, divOp;
 
@@ -28,18 +32,20 @@ module multdiv(
     
     // Counter
     wire [5:0] counter;
+    wire counter_clr;
+    assign counter_clr = ctrl_MULT | ctrl_DIV;
 
-    tff c0(.t(1'b1), .clock(clock), .reset(ctrl_MULT | ctrl_DIV), .q(counter[0]));
-    tff c1(.t(counter[0]), .clock(clock), .reset(ctrl_MULT | ctrl_DIV), .q(counter[1]));
-    tff c2(.t(counter[0] & counter[1]), .clock(clock), .reset(ctrl_MULT | ctrl_DIV), .q(counter[2]));
-    tff c3(.t(counter[0] & counter[1] & counter[2]), .clock(clock), .reset(ctrl_MULT | ctrl_DIV), .q(counter[3]));
-    tff c4(.t(counter[0] & counter[1] & counter[2] & counter[3]), .clock(clock), .reset(ctrl_MULT | ctrl_DIV), .q(counter[4]));
-    tff c5(.t(counter[0] & counter[1] & counter[2] & counter[3] & counter[4]), .clock(clock), .reset(ctrl_MULT | ctrl_DIV), .q(counter[5]));
+    tff c0(.t(counter_clr ? counter[0] : 1'b1), .clock(clock), .reset(reset), .q(counter[0]));
+    tff c1(.t(counter_clr ? counter[1] : counter[0]), .clock(clock), .reset(reset), .q(counter[1]));
+    tff c2(.t(counter_clr ? counter[2] : (counter[0] & counter[1])), .clock(clock), .reset(reset), .q(counter[2]));
+    tff c3(.t(counter_clr ? counter[3] : (counter[0] & counter[1] & counter[2])), .clock(clock), .reset(reset), .q(counter[3]));
+    tff c4(.t(counter_clr ? counter[4] : (counter[0] & counter[1] & counter[2] & counter[3])), .clock(clock), .reset(reset), .q(counter[4]));
+    tff c5(.t(counter_clr ? counter[5] : (counter[0] & counter[1] & counter[2] & counter[3] & counter[4])), .clock(clock), .reset(reset), .q(counter[5]));
 
     // MULT
     wire [64:0] boothReg_d, boothReg_q;
 
-    register #(.WIDTH(65)) boothReg(.clock(clock), .in(boothReg_d), .out(boothReg_q), .enable(1'b1), .reset(ctrl_MULT));
+    register #(.WIDTH(65)) boothReg(.clock(clock), .in(ctrl_MULT ? 65'b0 : boothReg_d), .out(boothReg_q), .enable(1'b1), .reset(reset));
 
     wire [2:0] boothCode;
     assign boothCode = boothReg_q[2:0];
@@ -55,7 +61,7 @@ module multdiv(
     assign boothReg_d = ~(|counter) ? {32'b0, stable_B[31:0], 1'b0} : afterArr;
 
     wire mult_exception;
-    assign mult_exception = ~((~(|boothReg_q[64:33]) & ~boothReg_q[32]) | ((&boothReg_q[64:33]) & boothReg_q[32])) | (stable_A[31] & ~(|stable_A[30:0]) & stable_B[31]) | (stable_B[31] & ~(|stable_B[30:0]) & stable_A[31]);
+    assign mult_exception = ~((~(|boothReg_q[64:33]) & ~boothReg_q[32]) | ((&boothReg_q[64:33]) & boothReg_q[32])) | (A_is_min & stable_B[31]) | (B_is_min & stable_A[31]);
 
     // DIV
     wire [31:0] negA, negB;
@@ -63,11 +69,11 @@ module multdiv(
     assign accA = stable_A[31] ? negA : stable_A;
     assign accB = stable_B[31] ? negB : stable_B;
     alu negAAlu(.data_operandA(~stable_A), .data_operandB(32'b1), .ctrl_ALUopcode(5'b0), .ctrl_shiftamt(5'b0), .data_result(negA), .isNotEqual(), .isLessThan(), .overflow());
-    alu negBAlu(.data_operandA(~data_operandB), .data_operandB(32'b1), .ctrl_ALUopcode(5'b0), .ctrl_shiftamt(5'b0), .data_result(negB), .isNotEqual(), .isLessThan(), .overflow());
+    alu negBAlu(.data_operandA(~stable_B), .data_operandB(32'b1), .ctrl_ALUopcode(5'b0), .ctrl_shiftamt(5'b0), .data_result(negB), .isNotEqual(), .isLessThan(), .overflow());
 
     wire [63:0] divReg_d, divReg_q;
     
-    register #(.WIDTH(64)) divReg(.clock(clock), .in(divReg_d), .out(divReg_q), .enable(1'b1), .reset(ctrl_DIV));
+    register #(.WIDTH(64)) divReg(.clock(clock), .in(ctrl_DIV ? 64'b0 : divReg_d), .out(divReg_q), .enable(1'b1), .reset(reset));
 
     wire [31:0] divAluOut;
 

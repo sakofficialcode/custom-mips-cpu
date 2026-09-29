@@ -165,7 +165,7 @@ module processor(
     wire [31:0] multdiv_out;
     wire multdiv_busy, multdiv_ready, multdiv_exception;
 
-    dffe_ref multdivDff(.q(multdiv_busy), .d(1'b1), .clk(clock), .en((x_isMult | x_isDiv) & ~multdiv_busy), .clr(multdiv_ready));
+    dffe_ref multdivDff(.q(multdiv_busy), .d(~multdiv_ready & ((x_isMult | x_isDiv) | multdiv_busy)), .clk(clock), .en(1'b1), .clr(reset));
 
     assign stall_multdiv = ((x_isMult | x_isDiv) | multdiv_busy) & ~multdiv_ready;
 
@@ -173,7 +173,7 @@ module processor(
     assign ctrl_MULT = x_isMult & ~multdiv_busy & ~multdiv_ready;
     assign ctrl_DIV = x_isDiv & ~multdiv_busy & ~multdiv_ready;
 
-    multdiv MULTDIV(.data_operandA(x_a_bypass), .data_operandB(x_b_bypass), .ctrl_MULT(ctrl_MULT), .ctrl_DIV(ctrl_DIV), .clock(clock), .data_result(multdiv_out), .data_exception(multdiv_exception), .data_resultRDY(multdiv_ready));
+    multdiv MULTDIV(.data_operandA(x_a_bypass), .data_operandB(x_b_bypass), .ctrl_MULT(ctrl_MULT), .ctrl_DIV(ctrl_DIV), .clock(clock), .reset(reset), .data_result(multdiv_out), .data_exception(multdiv_exception), .data_resultRDY(multdiv_ready));
 
     wire [31:0] x_exception;
     assign x_exception = x_overflow ? x_isI ? 32'h00000002 : ~|(5'b0^aluOp) ? 32'h00000001 : ~|(5'b00001^aluOp) ? 32'h00000003 :  32'b0 : (multdiv_exception & multdiv_ready) ? ~|(5'b00110^aluOp) ? 32'h00000004 : ~|(5'b00111^aluOp) ? 32'h00000005 : 32'b0  : 32'b0;

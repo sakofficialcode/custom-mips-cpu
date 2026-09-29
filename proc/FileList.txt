@@ -2,6 +2,7 @@
 ./alu/alu.v
 ./alu/alu_tb.v
 ./dffe_ref.v
+./dffe_ref_neg.v
 ./multdiv/multdiv.v
 ./multdiv/multdiv_tb.v
 ./mux_2.v
@@ -12,6 +13,7 @@
 ./regfile/regfile.v
 ./regfile/regfile_tb.v
 ./regfile/register.v
+./regfile/register_neg.v
 ./ROM.v
 ./tff.v
 ./Wrapper.v

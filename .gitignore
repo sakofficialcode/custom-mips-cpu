@@ -32,3 +32,6 @@ __pycache__/
 
 # Windows alternate data streams
 *:Zone.Identifier
+
+# Test files
+test_files/

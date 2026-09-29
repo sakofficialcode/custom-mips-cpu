@@ -108,16 +108,17 @@ module alu(data_operandA, data_operandB, ctrl_ALUopcode, ctrl_shiftamt, data_res
 
     mux_8 #(.WIDTH(32)) res_mux(data_result, sel, add_result, subtract_result, and_result, or_result, sll_result, sra_result, 32'b0, 32'b0);
 
-    
-    or (isNotEqual, subtract_result[0], subtract_result[1], subtract_result[2], subtract_result[3], subtract_result[4], subtract_result[5], subtract_result[6], subtract_result[7], subtract_result[8], subtract_result[9], subtract_result[10], subtract_result[11], subtract_result[12], subtract_result[13], subtract_result[14], subtract_result[15], subtract_result[16], subtract_result[17], subtract_result[18], subtract_result[19], subtract_result[20], subtract_result[21], subtract_result[22], subtract_result[23], subtract_result[24], subtract_result[25], subtract_result[26], subtract_result[27], subtract_result[28], subtract_result[29], subtract_result[30], subtract_result[31]);
+    assign isNotEqual = |(data_operandA ^ data_operandB);
+    // or (isNotEqual, subtract_result[0], subtract_result[1], subtract_result[2], subtract_result[3], subtract_result[4], subtract_result[5], subtract_result[6], subtract_result[7], subtract_result[8], subtract_result[9], subtract_result[10], subtract_result[11], subtract_result[12], subtract_result[13], subtract_result[14], subtract_result[15], subtract_result[16], subtract_result[17], subtract_result[18], subtract_result[19], subtract_result[20], subtract_result[21], subtract_result[22], subtract_result[23], subtract_result[24], subtract_result[25], subtract_result[26], subtract_result[27], subtract_result[28], subtract_result[29], subtract_result[30], subtract_result[31]);
 
     wire accB_sign, same_sign, diff_sign;
 
     assign accB_sign = ctrl_ALUopcode[0] ? B_not[31] : data_operandB[31];
     
     xnor (same_sign, data_operandA[31], accB_sign);
-    xor (diff_sign, data_operandA[31], data_result[31]);
-    and (overflow, same_sign, diff_sign);
+    assign diff_sign =sel[0] ? (data_operandA[31] ^ subtract_result[31]) : (data_operandA[31] ^ add_result[31]);
+    assign overflow = sel[1] ? 1'b0 : same_sign & diff_sign;
+    //and (overflow, same_sign, diff_sign);
 
     
     wire diff_sign_less_than;
