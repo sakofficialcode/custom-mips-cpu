@@ -3,4 +3,3 @@
 #
 # processor.v and multdiv.v instantiate `register #(.WIDTH(32))`; only the multdiv copy has the
 # WIDTH parameter. Its default is 32, so regfile.v's unparameterized uses still get 32 bits.
-register.v multdiv/register.v

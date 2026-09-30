@@ -1,1 +1,0 @@
--L "rtl" --timescale "1ns/1ps" --override_timeunit --override_timeprecision -s "rtl_snap" "rtl.processor" "rtl.regfile" --log "xelab_rtl.log" 
