@@ -3,6 +3,7 @@ class proc_env extends uvm_env;
 
     wb_monitor monitor;
     imem_agent imem_ag;
+    dmem_agent dmem_ag;
 
     function new(string name, uvm_component parent);
         super.new(name, parent);
@@ -12,5 +13,6 @@ class proc_env extends uvm_env;
         super.build_phase(phase);
         monitor = wb_monitor::type_id::create("monitor", this);
         imem_ag = imem_agent::type_id::create("imem_ag", this);
+        dmem_ag = dmem_agent::type_id::create("dmem_ag", this);
     endfunction
 endclass

@@ -23,6 +23,7 @@ module  tb_top;
     initial begin
         uvm_config_db#(virtual reg_if)::set(null, "*", "reg_vif", regIF);
         uvm_config_db#(virtual imem_if)::set(null, "*", "imem_vif", imem);
+        uvm_config_db#(virtual dmem_if)::set(null, "*", "dmem_vif", dmem);
         run_test();
     end
 
@@ -45,14 +46,6 @@ module  tb_top;
         .address_dmem(dmem.address),
         .data(dmem.data),
         .q_dmem(dmem.q)
-    );
-
-    RAM ProcMem(
-        .clk(clock),
-        .wEn(dmem.wren),
-        .addr(dmem.address[11:0]),
-        .dataIn(dmem.data),
-        .dataOut(dmem.q)
     );
 
     regfile RegFile(
