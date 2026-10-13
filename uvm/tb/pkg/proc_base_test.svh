@@ -2,6 +2,7 @@ class proc_base_test extends uvm_test;
     `uvm_component_utils(proc_base_test)
 
     proc_env env;
+    imem_model m = new();
 
     function new(string name, uvm_component parent);
         super.new(name, parent);
@@ -10,12 +11,12 @@ class proc_base_test extends uvm_test;
     function void build_phase(uvm_phase phase);
         super.build_phase(phase);
         env = proc_env::type_id::create("env", this);
-
+        
     endfunction
 
     task run_phase(uvm_phase phase);
         
-        string verif_dir, prog;
+        string verif_dir, prog, mem_dir;
         int num_cycles = 255;
         int fd;
         if ($value$plusargs("VERIF_DIR=%s", verif_dir) && $value$plusargs("PROG=%s", prog)) begin
@@ -25,6 +26,11 @@ class proc_base_test extends uvm_test;
                 $fclose(fd);
             end
         end        
+
+
+        if ($value$plusargs("MEM_DIR=%s", mem_dir)) begin
+            m.load({mem_dir, prog, ".mem"});
+        end
 
         phase.raise_objection(this);
         #(num_cycles * 20 + 11);

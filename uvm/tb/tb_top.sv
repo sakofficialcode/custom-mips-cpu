@@ -19,25 +19,12 @@ module  tb_top;
     dmem_if dmem(clock, rst);
     reg_if regIF(clock, rst);
 
-    initial begin
-        string mem_dir, prog;
-        if (!$value$plusargs("MEM_DIR=%s", mem_dir)) $fatal(1, "+MEM_DIR required");
-        if (!$value$plusargs("PROG=%s", prog)) $fatal(1, "+PROG required");
-        $readmemb({mem_dir, prog, ".mem"}, InstMem.MemoryArray);
-    end
 
     initial begin
         uvm_config_db#(virtual reg_if)::set(null, "*", "reg_vif", regIF);
+        uvm_config_db#(virtual imem_if)::set(null, "*", "imem_vif", imem);
         run_test();
     end
-
-
-
-
-
-    
-
-
 
     processor CPU(
         .clock(clock),
@@ -58,12 +45,6 @@ module  tb_top;
         .address_dmem(dmem.address),
         .data(dmem.data),
         .q_dmem(dmem.q)
-    );
-
-    ROM InstMem(
-        .clk(clock),
-        .addr(imem.address[11:0]),
-        .dataOut(imem.q)
     );
 
     RAM ProcMem(
