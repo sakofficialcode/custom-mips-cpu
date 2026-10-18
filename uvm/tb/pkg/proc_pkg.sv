@@ -5,6 +5,8 @@ package proc_pkg;
     `include "wb_item.svh"
     `include "mem_item.svh"
     `include "wb_monitor.svh"
+    `include "dmem_monitor.svh"
+    `include "print_test.svh"
     `include "imem_model.svh"
     `include "imem_driver.svh"
     `include "imem_agent.svh"
