@@ -33,5 +33,8 @@ __pycache__/
 # Windows alternate data streams
 *:Zone.Identifier
 
+# UVM build output (regenerable)
+uvm/build/
+
 # Test files
 test_files/

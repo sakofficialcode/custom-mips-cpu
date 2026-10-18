@@ -2,6 +2,8 @@ package proc_pkg;
     import uvm_pkg::*;
     `include "uvm_macros.svh"
 
+    `include "wb_item.svh"
+    `include "mem_item.svh"
     `include "wb_monitor.svh"
     `include "imem_model.svh"
     `include "imem_driver.svh"
