@@ -13,6 +13,8 @@ package proc_pkg;
     `include "dmem_model.svh"
     `include "dmem_driver.svh"
     `include "dmem_agent.svh"
+    `include "proc_iss.svh"
     `include "proc_env.svh"
     `include "proc_base_test.svh"
+    `include "iss_check.svh"
 endpackage
