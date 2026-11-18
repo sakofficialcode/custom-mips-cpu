@@ -12,6 +12,10 @@ class proc_iss;
         $readmemb(path, imem);
     endfunction
 
+    function void load_image(prog_image image);
+        imem = image.words;
+    endfunction
+
 
     function void write_reg(bit [4:0] r, bit [31:0] d);
         wb_item item;

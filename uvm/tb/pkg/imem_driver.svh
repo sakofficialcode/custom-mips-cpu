@@ -2,7 +2,8 @@ class imem_driver extends uvm_driver;
     `uvm_component_utils(imem_driver)
 
     virtual imem_if vif;
-    imem_model model;
+    prog_image img;
+    imem_model model;    
 
     function new(string name, uvm_component parent);
         super.new(name, parent);
@@ -20,7 +21,9 @@ class imem_driver extends uvm_driver;
 
         
         model = new();
-        if ($value$plusargs("PROG=%s", prog) && $value$plusargs("MEM_DIR=%s", mem_dir)) begin
+        if (uvm_config_db#(prog_image)::get(this, "", "prog", img)) begin
+            model.load_image(img);
+        end else if ($value$plusargs("PROG=%s", prog) && $value$plusargs("MEM_DIR=%s", mem_dir)) begin
             model.load({mem_dir, prog, ".mem"});
         end else begin
             `uvm_fatal("MEM", "No prog or memory found")

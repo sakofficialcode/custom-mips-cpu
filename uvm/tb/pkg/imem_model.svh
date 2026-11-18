@@ -6,6 +6,10 @@ class imem_model;
         $readmemb(path, mem);
     endfunction
 
+    function void load_image(prog_image image);
+        mem = image.words;
+    endfunction
+
     function bit [31:0] read(bit [31:0] addr);
         return mem[addr[11:0]];
     endfunction
