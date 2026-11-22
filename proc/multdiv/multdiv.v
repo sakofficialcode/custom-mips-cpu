@@ -43,25 +43,41 @@ module multdiv(
     tff c5(.t(counter_clr ? counter[5] : (counter[0] & counter[1] & counter[2] & counter[3] & counter[4])), .clock(clock), .reset(reset), .q(counter[5]));
 
     // MULT
-    wire [64:0] boothReg_d, boothReg_q;
+    wire [66:0] boothReg_d, boothReg_q;
 
-    register #(.WIDTH(65)) boothReg(.clock(clock), .in(ctrl_MULT ? 65'b0 : boothReg_d), .out(boothReg_q), .enable(1'b1), .reset(reset));
+    register #(.WIDTH(67)) boothReg(.clock(clock), .in(ctrl_MULT ? 67'b0 : boothReg_d), .out(boothReg_q), .enable(1'b1), .reset(reset));
 
     wire [2:0] boothCode;
     assign boothCode = boothReg_q[2:0];
 
+    wire [31:0] partial;
+    assign partial = stable_A << ~(^boothCode[1:0]);
+
     wire [31:0] aluOut;
 
-    alu boothALU(.data_operandA(boothReg_q[64:33]), .data_operandB(stable_A << ~(^boothCode[1:0])), .ctrl_ALUopcode({4'b0, boothCode[2]}), .ctrl_shiftamt(5'b0), .data_result(aluOut), .isNotEqual(), .isLessThan(), .overflow());
+    alu boothALU(.data_operandA(boothReg_q[64:33]), .data_operandB(partial), .ctrl_ALUopcode({4'b0, boothCode[2]}), .ctrl_shiftamt(5'b0), .data_result(aluOut), .isNotEqual(), .isLessThan(), .overflow());
 
-    wire signed [64:0] beforeArr, afterArr;
-    assign beforeArr = (~(|boothCode) | &boothCode) ? boothReg_q : {aluOut, boothReg_q[32:0]};
+    wire h, carry_acc, carry1;
+    assign h = stable_A[31] ^ boothCode[2];
+    assign carry_acc = (boothReg_q[64] & (partial[31] ^ boothCode[2])) | (boothReg_q[64] & ~aluOut[31]) |  ((partial[31] ^ boothCode[2]) & ~aluOut[31]);
+
+
+    wire [1:0] ext, ext_next;
+    assign ext = boothReg_q[66:65];
+    assign ext_next[0] = ext[0] ^ h ^ carry_acc;
+    assign carry1 = (ext[0] & h) | (ext[0] & carry_acc) | (h & carry_acc);
+    assign ext_next[1] = ext[1] ^ h ^ carry1;
+
+
+    wire signed [66:0] beforeArr, afterArr;
+    assign beforeArr = (~(|boothCode) | &boothCode) ? boothReg_q : {ext_next, aluOut, boothReg_q[32:0]};
     assign afterArr = beforeArr >>> 2;
 
-    assign boothReg_d = ~(|counter) ? {32'b0, stable_B[31:0], 1'b0} : afterArr;
+    assign boothReg_d = ~(|counter) ? {34'b0, stable_B[31:0], 1'b0} : afterArr;
 
     wire mult_exception;
-    assign mult_exception = ~((~(|boothReg_q[64:33]) & ~boothReg_q[32]) | ((&boothReg_q[64:33]) & boothReg_q[32])) | (A_is_min & stable_B[31]) | (B_is_min & stable_A[31]);
+    assign mult_exception = ~( ~(|boothReg_q[66:32]) | (&boothReg_q[66:32]) );
+    //    assign mult_exception = ~((~(|boothReg_q[64:33]) & ~boothReg_q[32]) | ((&boothReg_q[64:33]) & boothReg_q[32])) | (A_is_min & stable_B[31]) | (B_is_min & stable_A[31]);
 
     // DIV
     wire [31:0] negA, negB;
