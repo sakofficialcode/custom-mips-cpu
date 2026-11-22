@@ -84,9 +84,9 @@ module processor(
     alu pcIncrement(.data_operandA( fdpc_out), .data_operandB(32'b1), .ctrl_ALUopcode(5'b0), .ctrl_shiftamt(5'b0), .data_result(pcIncremented), .isNotEqual(), .isLessThan(), .overflow());
 
     wire [31:0] nextPC;
-    wire BEXTaken, x_isJ, x_isJAL, x_isJR;
-    assign BEXTaken = d_isBEX & ((|(32'b0^data_readRegA)) | ~|(5'b10101^dxinsn_out[31:27]) | (~|(5'b11110^m_rd) & x_bypass_m_we) | (~|(5'b11110^m_rd) & ctrl_writeEnable));
-    assign nextPC = BEXTaken ? {{5'b0}, fdinsn_out[26:0]} : (x_isJ | x_isJAL) ? {{5'b0}, dxinsn_out[26:0]} : x_isJR ? x_a_bypass : branch ? branch_address : pcIncremented;
+    wire BEXTaken, x_isJ, x_isJAL, x_isJR, x_isBEX;
+    assign BEXTaken = x_isBEX & |x_a_bypass;
+    assign nextPC = BEXTaken ? {{5'b0}, dxinsn_out[26:0]} : (x_isJ | x_isJAL) ? {{5'b0}, dxinsn_out[26:0]} : x_isJR ? x_a_bypass : branch ? branch_address : pcIncremented;
 
     register #(.WIDTH(32)) FD_PC (.clock(~clock), .reset(reset), .enable(~stall), .in(nextPC), .out(fdpc_out));
 
@@ -117,7 +117,7 @@ module processor(
     register #(.WIDTH(32)) DX_B (.clock(~clock), .reset(reset), .enable(~stall), .in(data_readRegB), .out(dxb_out));
 
     wire [31:0] dxinsn_out;
-    register #(.WIDTH(32)) DX_INSN (.clock(~clock), .reset(reset), .enable(~stall_multdiv), .in((x_isJ | x_isJAL | x_isJR | branch | stall_lw) ? nop : fdinsn_out), .out(dxinsn_out));
+    register #(.WIDTH(32)) DX_INSN (.clock(~clock), .reset(reset), .enable(~stall_multdiv), .in((x_isJ | x_isJAL | x_isJR | branch | BEXTaken | stall_lw) ? nop : fdinsn_out), .out(dxinsn_out));
 
     wire [31:0] dxpc_out;
     register #(.WIDTH(32)) DX_PC (.clock(~clock), .reset(reset), .enable(~stall), .in(fdpc_out), .out(dxpc_out));
@@ -136,6 +136,7 @@ module processor(
     assign x_isDiv = x_isALU & ~|(5'b00111^dxinsn_out[6:2]);
     assign x_isLW = ~|(5'b01000^dxinsn_out[31:27]);
     assign x_isSW = ~|(5'b00111^dxinsn_out[31:27]);
+    assign x_isBEX = ~|(5'b10110^dxinsn_out[31:27]);
 
     wire [4:0] aluOp;
     assign aluOp = dxinsn_out[6:2];
@@ -148,15 +149,20 @@ module processor(
     wire [31:0] x_a_bypass, x_b_bypass;
     wire x_bypass_m_we;
     
+
+    wire [31:0] m_bypass_val;
+    assign m_bypass_val = |(xmexception_out) ? xmexception_out : m_isSETX ? {5'b0, xminsn_out[26:0]} : xmo_out;
+
+
     wire [4:0] x_rs1, m_rd;
-    assign x_rs1 = (x_isBNE | x_isBLT | x_isJR) ? dxinsn_out[26:22] : dxinsn_out[21:17];
+    assign x_rs1 = x_isBEX ? 5'd30 : (x_isBNE | x_isBLT | x_isJR) ? dxinsn_out[26:22] : dxinsn_out[21:17];
     assign m_rd = (m_isSETX | |xmexception_out) ? 5'b11110 : m_isJAL ? 5'b11111 : xminsn_out[26:22];
     assign x_bypass_m_we = ~|(5'b00000^xminsn_out[31:27]) | ~|(5'b00101^xminsn_out[31:27]) | m_isJAL | m_isSETX | m_isLW | |(xmexception_out);
-    assign x_a_bypass = ((~|(x_rs1^m_rd) & x_bypass_m_we) & |x_rs1) ? (|(xmexception_out) ? xmexception_out : xmo_out): ((~|(x_rs1^ctrl_writeReg) & ctrl_writeEnable) & |x_rs1) ? data_writeReg : dxa_out;
+    assign x_a_bypass = ((~|(x_rs1^m_rd) & x_bypass_m_we) & |x_rs1) ? m_bypass_val : ((~|(x_rs1^ctrl_writeReg) & ctrl_writeEnable) & |x_rs1) ? data_writeReg : dxa_out;
 
     wire [4:0] x_rs2;
     assign x_rs2 = (x_isBNE | x_isBLT) ? dxinsn_out[21:17] : x_isSW ? dxinsn_out[26:22] : dxinsn_out[16:12];
-    assign x_b_bypass = ((~|(x_rs2^m_rd) & x_bypass_m_we) & |x_rs2) ? (|(xmexception_out) ? xmexception_out : xmo_out) : ((~|(x_rs2^ctrl_writeReg) & ctrl_writeEnable) & |x_rs2) ? data_writeReg : dxb_out;
+    assign x_b_bypass = ((~|(x_rs2^m_rd) & x_bypass_m_we) & |x_rs2) ? m_bypass_val : ((~|(x_rs2^ctrl_writeReg) & ctrl_writeEnable) & |x_rs2) ? data_writeReg : dxb_out;
 
     alu ALU(.data_operandA(x_isJAL ? dxpc_out : x_a_bypass), .data_operandB(x_isI ? immediate : x_isJAL ? 32'b0 : x_b_bypass), .ctrl_ALUopcode((x_isI | x_isJAL) ? 5'b0 : aluOp), .ctrl_shiftamt(dxinsn_out[11:7]), .data_result(aluOut), .isNotEqual(x_isNE), .isLessThan(x_isLT), .overflow(x_overflow));
 
@@ -176,7 +182,7 @@ module processor(
     multdiv MULTDIV(.data_operandA(x_a_bypass), .data_operandB(x_b_bypass), .ctrl_MULT(ctrl_MULT), .ctrl_DIV(ctrl_DIV), .clock(clock), .reset(reset), .data_result(multdiv_out), .data_exception(multdiv_exception), .data_resultRDY(multdiv_ready));
 
     wire [31:0] x_exception;
-    assign x_exception = x_overflow ? x_isI ? 32'h00000002 : ~|(5'b0^aluOp) ? 32'h00000001 : ~|(5'b00001^aluOp) ? 32'h00000003 :  32'b0 : (multdiv_exception & multdiv_ready) ? ~|(5'b00110^aluOp) ? 32'h00000004 : ~|(5'b00111^aluOp) ? 32'h00000005 : 32'b0  : 32'b0;
+    assign x_exception = ~|dxinsn_out ? 32'b0 : x_overflow ? x_isI ? 32'h00000002 : ~|(5'b0^aluOp) ? 32'h00000001 : ~|(5'b00001^aluOp) ? 32'h00000003 :  32'b0 : (multdiv_exception & multdiv_ready) ? ~|(5'b00110^aluOp) ? 32'h00000004 : ~|(5'b00111^aluOp) ? 32'h00000005 : 32'b0  : 32'b0;
 
     assign stall_lw = x_isLW & (~|(ctrl_readRegA^dxinsn_out[26:22]) | (~|(ctrl_readRegB^dxinsn_out[26:22]) & ~d_isSW)) & |(dxinsn_out[26:22]);
 
