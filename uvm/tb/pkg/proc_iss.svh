@@ -124,7 +124,11 @@ class proc_iss;
                         a = regs[rs];
                         b = regs[rt];
                         if (b == 0) exc = 5;
-                        else begin
+                        if (a == 32'h80000000 && b == 32'hFFFFFFFF) begin
+                            result = 32'h80000000;
+                            w_inst = 1'b1;
+                            dest   = rd;
+                        end else begin
                             result = $signed(a) / $signed(b);
                             w_inst = 1'b1;
                             dest   = rd;

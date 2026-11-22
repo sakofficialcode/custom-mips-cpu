@@ -8,6 +8,7 @@ package proc_pkg;
     `include "dmem_monitor.svh"
 //  `include "print_test.svh"
     `include "prog_image.svh"
+    `include "insn_item.svh"
     `include "imem_model.svh"
     `include "imem_driver.svh"
     `include "imem_agent.svh"
@@ -18,5 +19,8 @@ package proc_pkg;
     `include "proc_scoreboard.svh"
     `include "proc_env.svh"
     `include "proc_base_test.svh"
+    `include "prog_gen.svh"
+    `include "rand_test.svh"
     `include "iss_check.svh"
+    `include "gen_check.svh"
 endpackage
