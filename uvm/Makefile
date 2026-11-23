@@ -78,7 +78,7 @@ endif
 
 # Echo a tool command and run it with output going only to its log; on failure print the
 # errors and the log path.
-quiet = echo '$(1)' && $(1) > /dev/null 2>&1 || { grep -E '^(ERROR|CRITICAL|Error-\[)' $(2) || tail -20 $(2); echo "full log: $(BUILD)/$(2)"; exit 1; }
+quiet = echo '$(1)' && $(1) > /dev/null 2>&1 || { grep -E '^(ERROR|CRITICAL)' $(2) || grep -E -A4 '^Error-\[' $(2) || tail -20 $(2); echo "full log: $(BUILD)/$(2)"; exit 1; }
 
 # ---- VCS settings ---------------------------------------------------------------------------
 # One compile+elaborate step into build/simv. Code coverage is limited to the DUT (cm_hier.txt)

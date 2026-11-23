@@ -69,6 +69,16 @@ module processor(
     wire stall, stall_lw, stall_multdiv;
     //assign stall = 1'b0;
 
+    wire [31:0] dxinsn_out;
+    wire x_isI, x_isBNE, x_isBLT, x_isALU, x_isMult, x_isDiv, x_isLW, x_isSW;
+    wire [31:0] aluOut, x_Branch;
+    wire x_isNE, x_isLT, x_overflow;
+    wire [31:0] x_a_bypass, x_b_bypass;
+    wire [31:0] xmo_out;
+    wire [31:0] xminsn_out;
+    wire [31:0] xmexception_out;
+    wire m_isJAL, m_isSETX, m_isLW, m_isSW;
+
 	
     // FETCH
 
@@ -116,7 +126,6 @@ module processor(
     wire [31:0] dxb_out;
     register #(.WIDTH(32)) DX_B (.clock(~clock), .reset(reset), .enable(~stall), .in(data_readRegB), .out(dxb_out));
 
-    wire [31:0] dxinsn_out;
     register #(.WIDTH(32)) DX_INSN (.clock(~clock), .reset(reset), .enable(~stall_multdiv), .in((x_isJ | x_isJAL | x_isJR | branch | BEXTaken | stall_lw) ? nop : fdinsn_out), .out(dxinsn_out));
 
     wire [31:0] dxpc_out;
@@ -124,7 +133,6 @@ module processor(
 
     // EXECUTE
 
-    wire x_isI, x_isBNE, x_isBLT, x_isALU, x_isMult, x_isDiv, x_isLW, x_isSW;
     assign x_isI = ~|(5'b00101 ^ dxinsn_out[31:27]) | ~|(5'b01000 ^ dxinsn_out[31:27]) | ~|(5'b00111 ^ dxinsn_out[31:27]);
     assign x_isJ = ~|(5'b00001^dxinsn_out[31:27]);
     assign x_isJAL = ~|(5'b00011^dxinsn_out[31:27]);
@@ -141,12 +149,9 @@ module processor(
     wire [4:0] aluOp;
     assign aluOp = dxinsn_out[6:2];
 
-    wire [31:0] aluOut, x_Branch;
-    wire x_isNE, x_isLT, x_overflow;
     wire [31:0] immediate;
     assign immediate = {{15{dxinsn_out[16]}}, dxinsn_out[16:0]};
 
-    wire [31:0] x_a_bypass, x_b_bypass;
     wire x_bypass_m_we;
     
 
@@ -189,16 +194,13 @@ module processor(
     assign stall = stall_multdiv | stall_lw;
 
     // Latch
-    wire [31:0] xmo_out;
     register #(.WIDTH(32)) XM_O (.clock(~clock), .reset(reset), .enable(1'b1), .in((multdiv_ready & (x_isMult | x_isDiv | multdiv_busy)) ? multdiv_out : aluOut), .out(xmo_out));
 
     wire [31:0] xmb_out;
     register #(.WIDTH(32)) XM_B (.clock(~clock), .reset(reset), .enable(1'b1), .in(x_b_bypass), .out(xmb_out));
 
-    wire [31:0] xminsn_out;
     register #(.WIDTH(32)) XM_INSN (.clock(~clock), .reset(reset), .enable(1'b1), .in(stall_multdiv ? nop : dxinsn_out), .out(xminsn_out));
 
-    wire [31:0] xmexception_out;
     register #(.WIDTH(32)) XM_EXCEPTION (.clock(~clock), .reset(reset), .enable(1'b1), .in(x_exception), .out(xmexception_out));
 
     // MEMORY
@@ -207,7 +209,6 @@ module processor(
     assign data = ((~|(xminsn_out[26:22]^ctrl_writeReg) & m_isSW & ctrl_writeEnable) & |ctrl_writeReg) ? data_writeReg: xmb_out;
     assign wren = ~|(5'b00111^xminsn_out[31:27]);
 
-    wire m_isJAL, m_isSETX, m_isLW, m_isSW;
     assign m_isJAL = ~|(5'b00011^xminsn_out[31:27]);
     assign m_isSETX = ~|(5'b10101^xminsn_out[31:27]);
     assign m_isLW = ~|(5'b01000^xminsn_out[31:27]);
