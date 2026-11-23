@@ -8,6 +8,7 @@ class proc_env extends uvm_env;
 //  wb_printer   wb_p;
 //  mem_printer  mem_p;
     proc_scoreboard sb;
+    proc_cov        cov;
 
 
     function new(string name, uvm_component parent);
@@ -23,6 +24,7 @@ class proc_env extends uvm_env;
 //      wb_p    = wb_printer::type_id::create("wb_p", this);
 //      mem_p   = mem_printer::type_id::create("mem_p", this);
         sb = proc_scoreboard::type_id::create("sb", this);
+        cov = proc_cov::type_id::create("cov", this);
     endfunction
 
     function void connect_phase(uvm_phase phase);
@@ -31,5 +33,6 @@ class proc_env extends uvm_env;
 //      dmem_m.ap.connect(mem_p.analysis_export);
         wb_m.ap.connect(sb.wb_imp);
         dmem_m.ap.connect(sb.mem_imp);
+        sb.exec_ap.connect(cov.analysis_export);
     endfunction
 endclass

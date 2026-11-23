@@ -1,13 +1,18 @@
-# Vivado xsim flow for the processor UVM testbench. Usage and the xsim quirks this file works
-# around are in README.md.
+# Simulation flow for the processor UVM testbench, for Synopsys VCS or Vivado xsim. Usage and
+# the xsim quirks this file works around are in README.md.
 #
-#   make smoke                                  verify the toolchain itself
-#   make rtl                                    compile + elaborate the RTL alone
+# SIM picks the simulator: vcs if `vcs` is on PATH, else xsim. Override with SIM=xsim / SIM=vcs.
+#
 #   make sim TEST=t [SEED=n|random] [VERBOSITY=UVM_HIGH] [PLUSARGS="+A=1 +B"] [WAVES=1]
 #   make regress TESTS="t1 t2" [SEEDS="1 2 3"]
 #   make cov                                    report over every coverage database so far
-#   make view TEST=t SEED=n                     open a WAVES=1 run in the xsim GUI
+#   make cov-clean                              drop collected coverage, keep the build
 #   make clean
+#
+# xsim only:
+#   make smoke                                  verify the toolchain itself
+#   make rtl                                    compile + elaborate the RTL alone
+#   make view TEST=t SEED=n                     open a WAVES=1 run in the xsim GUI
 #
 # RTL_DIR and TEST_FILES are relative to this directory. RTL_DIR can point at any processor
 # directory, e.g. a known-good worktree:
@@ -25,6 +30,11 @@ PLUSARGS  ?=
 WAVES     ?= 0
 TESTS     ?= $(TEST)
 SEEDS     ?= 1 2 3 4 5
+SIM       ?= $(if $(shell command -v vcs 2>/dev/null),vcs,xsim)
+
+ifeq ($(filter $(SIM),vcs xsim),)
+$(error SIM must be vcs or xsim, got '$(SIM)')
+endif
 
 ifeq ($(SEED),random)
 override SEED := $(shell od -An -N4 -tu4 /dev/urandom | tr -d ' ')
@@ -68,9 +78,26 @@ endif
 
 # Echo a tool command and run it with output going only to its log; on failure print the
 # errors and the log path.
-quiet = echo '$(1)' && $(1) > /dev/null 2>&1 || { grep -E '^(ERROR|CRITICAL)' $(2) || tail -20 $(2); echo "full log: $(BUILD)/$(2)"; exit 1; }
+quiet = echo '$(1)' && $(1) > /dev/null 2>&1 || { grep -E '^(ERROR|CRITICAL|Error-\[)' $(2) || tail -20 $(2); echo "full log: $(BUILD)/$(2)"; exit 1; }
 
-.PHONY: smoke rtl elab sim regress cov view clean need-test FORCE
+# ---- VCS settings ---------------------------------------------------------------------------
+# One compile+elaborate step into build/simv. Code coverage is limited to the DUT (cm_hier.txt)
+# so the testbench's own lines don't count; covergroups are always collected. Both land in
+# build/simv.vdb, which urg merges.
+VCS_CM    := line+cond+tgl+branch+fsm
+VCS_OPTS  := -full64 -sverilog -ntb_opts uvm-1.2 -timescale=1ns/1ps -top $(TOP) -o simv \
+             -Mdir=vcs_csrc -cm $(VCS_CM) -cm_hier cm_hier.txt $(addprefix +incdir+,$(INCDIRS))
+VCS_REPO_ARGS := +MEM_DIR=$(TESTS_ABS)/mem_files/ \
+                 +VERIF_DIR=$(TESTS_ABS)/verification_files/ \
+                 +ASM_DIR=$(TESTS_ABS)/assembly_files/
+
+ifeq ($(SIM),vcs)
+ELAB_STAMP := $(BUILD)/.vcs.$(TOP).stamp
+else
+ELAB_STAMP := $(BUILD)/.elab.$(TOP).stamp
+endif
+
+.PHONY: smoke rtl elab sim regress cov cov-clean view clean need-test FORCE
 
 $(BUILD) $(BUILD)/logs $(BUILD)/waves:
 	@mkdir -p $@
@@ -109,22 +136,40 @@ $(BUILD)/.elab.$(TOP).stamp: $(BUILD)/.rtl.stamp $(BUILD)/.tb.stamp
 	@cd $(BUILD) && $(call quiet,xelab -L rtl -L uvm --debug typical $(TIMESCALE) -s $(SNAP) work.$(TOP) --log xelab_$(TOP).log,xelab_$(TOP).log)
 	@touch $@
 
-elab: $(BUILD)/.elab.$(TOP).stamp
+# VCS: the same rtl.f / tb.abs.f lists, compiled together in one vcs call.
+$(BUILD)/.vcs.$(TOP).stamp: $(BUILD)/rtl.f $(BUILD)/rtl_dir.txt $(BUILD)/tb.abs.f $(RTL_SRCS) $(TB_SRCS) $(TB_LISTED) | $(BUILD)
+	@test -s $(BUILD)/tb.abs.f || { echo "$(TB_F) lists no sources yet: add your .sv files to it (see README.md)"; exit 1; }
+	@printf '+tree $(TOP).CPU\n+tree $(TOP).RegFile\n' > $(BUILD)/cm_hier.txt
+	@cd $(BUILD) && $(call quiet,vcs $(VCS_OPTS) -f rtl.f -f tb.abs.f -l vcs_comp.log,vcs_comp.log)
+	@touch $@
+
+elab: $(ELAB_STAMP)
 
 # ---- Running --------------------------------------------------------------------------------
 need-test:
 	@test -n "$(TEST)" || { echo "TEST is required, e.g. make sim TEST=my_test"; exit 1; }
 
-sim: need-test $(BUILD)/.elab.$(TOP).stamp | $(BUILD)/logs $(BUILD)/waves
+ifeq ($(SIM),vcs)
+# simv's exit status is ignored on purpose (|| true): check_log.sh decides pass/fail.
+sim: need-test $(ELAB_STAMP) | $(BUILD)/logs
+	@echo "vcs simv test=$(TEST) seed=$(SEED) log=$(LOG)"
+	@$(if $(filter 1,$(WAVES)),echo "note: WAVES=1 is not supported with SIM=vcs yet; running without waves")
+	@cd $(BUILD) && { ./simv +ntb_random_seed=$(SEED) +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) \
+	    +UVM_NO_RELNOTES $(VCS_REPO_ARGS) $(PLUSARGS) -cm $(VCS_CM) -cm_name $(TEST)_$(SEED) -no_save \
+	    -l $(LOG) $(if $(QUIET),> /dev/null 2>&1) || true; }
+	@$(SCRIPTS)/check_log.sh $(LOG) "$(TEST) seed=$(SEED)"
+else
+sim: need-test $(ELAB_STAMP) | $(BUILD)/logs $(BUILD)/waves
 	@echo "xsim $(SNAP) test=$(TEST) seed=$(SEED) log=$(LOG)"
 	@cd $(BUILD) && xsim $(SNAP) $(RUN_MODE) --sv_seed $(SEED) \
 	    --testplusarg UVM_TESTNAME=$(TEST) --testplusarg UVM_VERBOSITY=$(VERBOSITY) $(REPO_ARGS) $(USER_ARGS) \
 	    --cov_db_dir cov --cov_db_name $(TEST)_$(SEED) --log $(LOG) $(if $(QUIET),> /dev/null 2>&1)
 	@$(SCRIPTS)/check_log.sh $(LOG) "$(TEST) seed=$(SEED)"
+endif
 
 # Elaborates once, then runs every TESTS x SEEDS combination. A run that produces no verdict
-# at all (e.g. xsim failed to launch) counts as a failure.
-regress: $(BUILD)/.elab.$(TOP).stamp | $(BUILD)/logs
+# at all (e.g. the simulator failed to launch) counts as a failure.
+regress: $(ELAB_STAMP) | $(BUILD)/logs
 	@test -n "$(TESTS)" || { echo 'TESTS is required, e.g. make regress TESTS="t1 t2" SEEDS="1 2 3"'; exit 1; }
 	@summary=$(BUILD)/logs/regress_summary.txt; : > $$summary; \
 	for t in $(TESTS); do for s in $(SEEDS); do \
@@ -133,11 +178,26 @@ regress: $(BUILD)/.elab.$(TOP).stamp | $(BUILD)/logs
 	total=$$(( $(words $(TESTS)) * $(words $(SEEDS)) )); pass=$$(grep -c '^PASS' $$summary); \
 	echo "regress: $$pass/$$total passed  ($$summary)"; test $$pass -eq $$total
 
+ifeq ($(SIM),vcs)
+cov:
+	@test -d $(BUILD)/simv.vdb/snps/coverage/db/testdata || { echo "no coverage data yet: run some tests first"; exit 1; }
+	@cd $(BUILD) && rm -rf cov_report && $(call quiet,urg -full64 -dir simv.vdb -report cov_report -format both -log urg.log,urg.log)
+	@echo "text: $(BUILD)/cov_report/dashboard.txt  (covergroups: groups.txt, code: hierarchy.txt)"
+	@echo "html: $(BUILD)/cov_report/dashboard.html"
+
+# Only the per-run data: simv.vdb also holds the design database simv needs to run with -cm.
+cov-clean:
+	rm -rf $(BUILD)/simv.vdb/snps/coverage/db/testdata $(BUILD)/cov_report
+else
 cov:
 	@test -d $(BUILD)/cov/xsim.covdb || { echo "no coverage databases yet: run some tests first"; exit 1; }
 	@cd $(BUILD) && rm -rf cov_report && $(call quiet,xcrg -cov_db_dir cov -report_format all -report_dir cov_report -log xcrg.log,xcrg.log)
 	@echo "text: $(BUILD)/cov_report/functionalCoverageReport/xcrg_func_cov_report.txt"
 	@echo "html: $(BUILD)/cov_report/functionalCoverageReport/dashboard.html"
+
+cov-clean:
+	rm -rf $(BUILD)/cov $(BUILD)/cov_report
+endif
 
 view: need-test
 	@test -f $(WDB) || { echo "no waveform at $(WDB): rerun with WAVES=1"; exit 1; }

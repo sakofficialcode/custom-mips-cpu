@@ -6,6 +6,7 @@ class proc_scoreboard extends uvm_scoreboard;
 
     uvm_analysis_imp_wb #(wb_item, proc_scoreboard) wb_imp;
     uvm_analysis_imp_mem #(mem_item, proc_scoreboard) mem_imp;
+    uvm_analysis_port #(exec_item) exec_ap;
     prog_image img;
     proc_iss iss;
     int n_wb, n_mem, n_err;
@@ -19,6 +20,7 @@ class proc_scoreboard extends uvm_scoreboard;
         super.build_phase(phase);
         wb_imp = new("wb_imp", this);
         mem_imp = new("mem_imp", this);
+        exec_ap = new("exec_ap", this);
 
         iss = new();
         if (uvm_config_db#(prog_image)::get(this, "", "prog", img)) begin
@@ -77,6 +79,9 @@ class proc_scoreboard extends uvm_scoreboard;
         if (iss.mem_writes.size() != 0) begin
             `uvm_error("SB", $sformatf("%0d missing mem writes, top: %s", iss.mem_writes.size(), iss.mem_writes[0].convert2string()))
             n_err++;
+        end
+        foreach (iss.exec_log[i]) begin
+            exec_ap.write(iss.exec_log[i]);
         end
     endfunction
 

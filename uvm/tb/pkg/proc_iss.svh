@@ -1,12 +1,18 @@
 class proc_iss;
-    bit      [31:0] regs      [  32];
-    bit      [31:0] pc;
-    bit      [31:0] imem      [4096];
-    bit      [31:0] dmem      [4096];
-    wb_item         reg_writes[   $];
-    mem_item        mem_writes[   $];
+    bit       [31:0] regs      [  32];
+    bit       [31:0] pc;
+    bit       [31:0] imem      [4096];
+    bit       [31:0] dmem      [4096];
+    wb_item          reg_writes[   $];
+    mem_item         mem_writes[   $];
+    exec_item        exec_log  [   $];
+    
 
-    bit      [31:0] insn;
+    bit       [31:0] insn;
+    int n_step;
+    int last_wr[32];
+    bit last_lw[32];
+    
 
     function void load(string path);
         $readmemb(path, imem);
@@ -45,7 +51,11 @@ class proc_iss;
         bit [31:0] addr;
         bit [31:0] next_pc;
         bit [63:0] prod;
-
+        op_e       op;
+        bit        op_valid;
+        bit        bex_taken;
+        
+        exec_item exec;
 
         insn    = imem[pc[11:0]];
         opcode  = insn[31:27];
@@ -60,13 +70,15 @@ class proc_iss;
         w_inst  = 1'b0;
         dest    = 5'b0;
         exc     = 32'b0;
+        a = regs[rs];
+        b = regs[rt];
 
         case (opcode)
             5'b00000: begin
                 case (aluop)
                     5'b00000: begin
-                        a      = regs[rs];
-                        b      = regs[rt];
+                        op = ADD;
+                        op_valid = 1;
                         result = a + b;
                         wide   = {a[31], a} + {b[31], b};
                         if (wide[32] ^ wide[31]) exc = 1;
@@ -74,8 +86,8 @@ class proc_iss;
                         dest   = rd;
                     end
                     5'b00001: begin
-                        a      = regs[rs];
-                        b      = regs[rt];
+                        op = SUB;
+                        op_valid = 1;
                         result = a - b;
                         wide   = {a[31], a} - {b[31], b};
                         if (wide[32] ^ wide[31]) exc = 3;
@@ -83,37 +95,36 @@ class proc_iss;
                         dest   = rd;
                     end
                     5'b00010: begin
-                        a      = regs[rs];
-                        b      = regs[rt];
+                        op = AND;
+                        op_valid = 1;
                         result = a & b;
                         w_inst = 1'b1;
                         dest   = rd;
                     end
                     5'b00011: begin
-                        a      = regs[rs];
-                        b      = regs[rt];
+                        op = OR;
+                        op_valid = 1;
                         result = a | b;
                         w_inst = 1'b1;
                         dest   = rd;
                     end
                     5'b00100: begin
-                        a      = regs[rs];
+                        op = SLL;
+                        op_valid = 1;
                         result = a << shamt;
                         w_inst = 1'b1;
                         dest   = rd;
                     end
                     5'b00101: begin
-                        a      = regs[rs];
+                        op = SRA;
+                        op_valid = 1;
                         result = $signed(a) >>> shamt;
                         w_inst = 1'b1;
                         dest   = rd;
                     end
                     5'b00110: begin
-
-                        a      = regs[rs];
-                        b      = regs[rt];
-
-
+                        op = MUL;
+                        op_valid = 1;
                         prod   = $signed({{32{a[31]}}, a}) * $signed({{32{b[31]}}, b});
                         result = prod[31:0];
                         if (prod != {{32{prod[31]}}, prod[31:0]}) exc = 4;
@@ -121,8 +132,8 @@ class proc_iss;
                         dest   = rd;
                     end
                     5'b00111: begin
-                        a = regs[rs];
-                        b = regs[rt];
+                        op = DIV;
+                        op_valid = 1;
                         if (b == 0) exc = 5;
                         if (a == 32'h80000000 && b == 32'hFFFFFFFF) begin
                             result = 32'h80000000;
@@ -138,7 +149,8 @@ class proc_iss;
                 endcase
             end
             5'b00101: begin
-                a      = regs[rs];
+                op = ADDI;
+                op_valid = 1;
                 result = a + imm;
                 wide   = {a[31], a} + {imm[31], imm};
                 if (wide[32] ^ wide[31]) exc = 2;
@@ -148,6 +160,9 @@ class proc_iss;
             5'b00111: begin
                 mem_item item;
 
+                op = SW;
+                op_valid = 1;
+
                 addr             = regs[rs] + imm;
                 dmem[addr[11:0]] = regs[rd];
                 item             = mem_item::type_id::create("item");
@@ -156,6 +171,8 @@ class proc_iss;
                 mem_writes.push_back(item);
             end
             5'b01000: begin
+                op = LW; 
+                op_valid = 1;
                 addr   = regs[rs] + imm;
                 result = dmem[addr[11:0]];
                 w_inst = 1;
@@ -163,27 +180,39 @@ class proc_iss;
 
             end
             5'b00001: begin
+                op_valid = 0;
                 next_pc = {5'b0, insn[26:0]};
             end
             5'b00011: begin
+                op_valid = 0;
                 w_inst  = 1;
                 dest    = 5'd31;
                 result  = pc + 1;
                 next_pc = {5'b0, insn[26:0]};
             end
             5'b00100: begin
+                op_valid = 0;
                 next_pc = regs[rd];
             end
             5'b00010: begin
+                op_valid = 0;
                 if (regs[rd] != regs[rs]) next_pc = pc + 1 + imm;
             end
             5'b00110: begin
+                op_valid = 0;
                 if ($signed(regs[rd]) < $signed(regs[rs])) next_pc = pc + 1 + imm;
             end
             5'b10110: begin
-                if (regs[30] != 0) next_pc = {5'b0, insn[26:0]};
+                op = BEX;
+                op_valid = 1;
+                rs = 30;
+                a = regs[30];
+                bex_taken = regs[30] != 0 ? 1'b1 : 1'b0;
+                if (bex_taken) next_pc = {5'b0, insn[26:0]};
             end
             5'b10101: begin
+                op = SETX;
+                op_valid = 1;
                 w_inst = 1;
                 dest   = 5'd30;
                 result = {5'b0, insn[26:0]};
@@ -196,22 +225,55 @@ class proc_iss;
 
         endcase
 
-        if (exc != 0) raise_exception(exc);
-        else if (w_inst) write_reg(dest, result);
+        
+        if (op_valid && insn != 0) begin
+            exec = exec_item::type_id::create("exec");
+            exec.op = op;
+            exec.rd = rd;
+            exec.rs = rs;
+            exec.rt = rt;
+            exec.a = a;
+            exec.b = b;
+            exec.result = result;
+            exec.exception = exc;
+            exec.bex_taken = bex_taken;
+            exec.dist_rs = n_step - last_wr[rs] > 4 ? 4 : n_step - last_wr[rs];
+            exec.dist_rt = n_step - last_wr[rt] > 4 ? 4 : n_step - last_wr[rt];
+            exec.prod_lw = last_lw[rs];
+            exec_log.push_back(exec);
+        end
 
+        if (exc != 0) begin
+            last_wr[30] = n_step;
+            last_lw[30] = 0;
+            raise_exception(exc);
+        end else if (w_inst) begin
+            if (dest != 0) begin
+                last_wr[dest] = n_step;
+                last_lw[dest] = (op == LW);
+            end
+            write_reg(dest, result);
+        end
+        
+        if (next_pc != pc + 1) n_step += 2;
+
+        n_step++;
         pc = next_pc;
     endfunction
 
     function bit run(int max_steps = 100000);
-        int nop_cnt = 0;
-        int total = 0;
-        int seen        [4096];
+        int        nop_cnt = 0;
+        int        total = 0;
+        int        seen        [4096];
         bit [31:0] next;
         foreach (seen[i]) begin
             seen[i] = -1;
         end
+        foreach (last_wr[i]) begin
+            last_wr[i] = -100;
+        end
         repeat (max_steps) begin
-            next = imem[pc[11:0]];
+            next  = imem[pc[11:0]];
             total = reg_writes.size() + mem_writes.size();
             if (seen[pc[11:0]] == total) return 1;
             else seen[pc[11:0]] = total;

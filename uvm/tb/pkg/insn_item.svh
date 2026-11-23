@@ -31,7 +31,7 @@ class insn_item extends uvm_sequence_item;
         if (op inside {LW, SW}){
             rs inside {0, 28, 29};
             (rs == 0) -> (imm inside {[256:319]});
-            (rs == 28) -> (imm inside {[0:63]});
+            (rs == 28) -> (imm inside {[0:31]});
             (rs == 29) -> (imm inside {[17'h1FFE0:17'h1FFFF],[0:31]});
         }
     }

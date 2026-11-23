@@ -6,6 +6,7 @@ class prog_gen extends uvm_object;
     prog_image img;
     int unsigned pc;
     bit [4:0] history[$];
+    bit [31:0] mem_reg;
 
     function new(string name = "prog_gen");
         super.new(name);
@@ -52,14 +53,16 @@ class prog_gen extends uvm_object;
     function void gen_bex_setx(insn_item insn);
         int fill, post, skip;
         bit [26:0]  bex_target;
+        bit nonzero;
 
         if (!std::randomize(fill) with {fill dist {0 := 1, [1:3] :/ 2};})
-            `uvm_fatal("GEN", "Couldn't generate fill")
+            `uvm_fatal("GEN", "Couldn't generate bex/setx fill")
         if (!std::randomize(post) with {post dist {[1:7] :/ 7};})
             `uvm_fatal("GEN", "Couldn't generate post")
         
-        
-        if (!insn.randomize() with {op == SETX; target dist {0 := 3, [1:27'h7FFFFFF] :/ 1};})
+        if(!std::randomize(nonzero) with {nonzero dist {0 := 3, 1 := 1};})
+            `uvm_fatal("GEN", "Couldn't generate bex/setx nonzero")
+        if (!insn.randomize() with {op == SETX; if (nonzero) target != 0; else target == 0;})
             `uvm_fatal("GEN", "Couldn't generate bex/setx")
         emit(insn.encode(), insn.convert2string());
         rem(30);
@@ -78,6 +81,30 @@ class prog_gen extends uvm_object;
         repeat (post) begin
             gen_body_insn(insn);
         end
+    endfunction
+
+    function void gen_mem_hzd(insn_item insn);
+        int fill;
+        bit [31:0] new_base;
+
+        if(!std::randomize(fill) with {fill dist {0 := 1, [1:2] :/ 2};})
+            `uvm_fatal("GEN", "Couldn't generate mem fill")
+        if (mem_reg == 288) new_base = 17'd256;
+        else new_base = 17'd288;
+        mem_reg = new_base;
+        if(!insn.randomize() with {op == ADDI; rd == 5'd28; rs == 5'd0; imm == new_base;})
+            `uvm_fatal("GEN", "Couldn't generate mem hzd")
+        emit(insn.encode(), insn.convert2string());
+        rem(insn.rd);
+        repeat(fill) begin
+            gen_body_insn(insn);
+        end
+        if(!insn.randomize() with {op inside {LW, SW}; !(rd inside {[1:4], 28, 29, 31}); rs == 5'd28; imm dist {0 := 1, [1:3] :/ 2};})
+            `uvm_fatal("GEN", "Couldn't generate mem hzd")
+        emit(insn.encode(), insn.convert2string());
+        if (insn.op == LW) rem(insn.rd);
+
+
     endfunction
 
 
@@ -113,13 +140,14 @@ class prog_gen extends uvm_object;
 
         if(!insn.randomize() with {op == ADDI; rd == 5'd28; rs == 0; imm == 17'd256;})
             `uvm_fatal("GEN", "Couldn't generate mem reg instruction")
-        emit(insn.encode(), insn.convert2string());        
+        emit(insn.encode(), insn.convert2string());
+        mem_reg = 17'd256;
         if(!insn.randomize() with {op == ADDI; rd == 5'd29; rs == 0; imm == 17'd288;})
             `uvm_fatal("GEN", "Couldn't generate mem reg instruction")
         emit(insn.encode(), insn.convert2string());
 
         for (int l = 0; l < 64; l++) begin
-            if(!insn.randomize() with {op == SW; rd inside {[5:27]}; rs == 5'd28; imm == l;})
+            if(!insn.randomize() with {op == SW; rd inside {[5:27]}; rs == 5'd0; imm == 256 + l;})
                 `uvm_fatal("GEN", "Couldn't generate fill instruction")
             emit(insn.encode(), insn.convert2string());
         end
@@ -127,8 +155,9 @@ class prog_gen extends uvm_object;
 
         for (int i = 0; i < n_body; i++) begin
             randcase
-                9: gen_body_insn(insn);
+                8: gen_body_insn(insn);
                 1: gen_bex_setx(insn);
+                1: gen_mem_hzd(insn);
             endcase
         end
         

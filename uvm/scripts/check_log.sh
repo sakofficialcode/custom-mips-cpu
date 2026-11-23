@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Pass/fail verdict for one xsim run.
+# Pass/fail verdict for one simulator run (xsim or VCS).
 #
-#   check_log.sh <xsim log> <label>
+#   check_log.sh <simulator log> <label>
 #
 # xsim exits 0 on UVM_ERROR, UVM_FATAL, and even an unknown +UVM_TESTNAME, so its exit code
 # says nothing. A run passes only if it reached the UVM report summary with zero UVM errors and
@@ -23,7 +23,8 @@ fi
 
 uvm_errors=$(sed -n 's/^UVM_ERROR :[[:space:]]*\([0-9]*\).*/\1/p' "$log" | tail -1)
 uvm_fatals=$(sed -n 's/^UVM_FATAL :[[:space:]]*\([0-9]*\).*/\1/p' "$log" | tail -1)
-sim_errors=$(grep -cE '^(ERROR|Error|Fatal|FATAL_ERROR):' "$log")
+# xsim prints "ERROR:" / "Fatal:"; VCS prints "Error-[CODE] ..." (e.g. Error-[NOA] null access).
+sim_errors=$(grep -cE '^(ERROR|Error|Fatal|FATAL_ERROR):|^Error-\[' "$log")
 
 if [[ $uvm_errors == 0 && $uvm_fatals == 0 && $sim_errors == 0 ]]; then
     echo "PASS $label"
