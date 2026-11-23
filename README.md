@@ -1,17 +1,18 @@
 # custom-mips-cpu
 
-A 32-bit, 5-stage pipelined MIPS-style processor written in structural Verilog. Built a self-playing guitar controlled by the processor.
+A 32-bit, 5-stage pipelined MIPS-style processor written in structural Verilog, verified with a constrained-random UVM testbench that found and fixed 5 RTL bugs. Built a self-playing guitar controlled by the processor.
 
 | Directory | Contents |
 | :--- | :--- |
 | [`proc/`](proc/) | The processor, organized by checkpoint (ALU, regfile, multdiv, full CPU) |
+| [`uvm/`](uvm/) | The UVM testbench: constrained-random program generator, instruction-set simulator, scoreboard, and functional coverage |
 | [`final-project/`](final-project/) | The self-playing guitar: Vivado project, player program, songs, and VGA assets |
 
 ## Processor
 
 The processor is written primarily in structural Verilog, apart from clocked registers.
 
-- Hazard handling: MX, WX, and WM bypassing, load-use stalls, `bex` taken from the decode stage, and a stall while a multiply or divide is running
+- Hazard handling: MX, WX, and WM bypassing, load-use stalls, `bex` resolved in the execute stage through the bypass network, and a stall while a multiply or divide is running
 - ALU: carry-lookahead adder and barrel shifter
 - Multiply/divide: modified Booth multiplication (16 cycles) and non-restoring division (32 cycles)
 - Register file: 32 registers of 32 D flip-flops, with tri-state buffers on the read ports, wired up with `genvar`/`generate`
@@ -19,11 +20,7 @@ The processor is written primarily in structural Verilog, apart from clocked reg
 
 ### In progress
 
-I'm still working on the processor. These are the three things I'm adding right now.
-
-#### UVM testbench
-
-Right now the ALU, regfile, and multdiv are each tested against a fixed CSV of expected outputs, and there's no full-processor testbench in this repo. I'm replacing that setup with a UVM testbench that can test the whole processor, not just one module at a time. This also means moving from Icarus Verilog to a simulator that supports SystemVerilog and UVM.
+I'm still working on the processor. These are the two things I'm adding right now.
 
 #### Instruction and data caches
 
@@ -43,7 +40,7 @@ cd ../multdiv && iverilog -o multdiv -c FileList.txt && ./multdiv +test=multbasi
 
 Each test writes a `*_diff.csv` file. If it's empty, all the test vectors passed.
 
-The full-processor testbench (`Wrapper_tb.v`, referenced in `proc/FileList.txt`) isn't included in this repo, so the complete CPU can't be simulated from here yet.
+The full processor is simulated with the UVM testbench described in [Verification](#verification).
 
 ### Instruction set
 
@@ -65,6 +62,62 @@ This isn't the standard MIPS instruction set. Opcodes are 5 bits instead of 6, R
 When `add`, `addi`, `sub`, `mul`, or `div` hits an exception, it writes a status code to `$r30` (`$rstatus`): 1 for `add`, 2 for `addi`, 3 for `sub`, 4 for `mul`, and 5 for `div`.
 
 More detail is in the design docs for the [processor](proc/README.md), [ALU](proc/alu/README.md), [multdiv](proc/multdiv/README.md), and [regfile](proc/regfile/README.md).
+
+## Verification
+
+The full processor is verified with a UVM testbench in [`uvm/`](uvm/). It runs on Synopsys VCS or Vivado xsim.
+
+- **Reference model:** an instruction-set simulator, written from the ISA spec rather than the RTL, runs each program and predicts every register write and store.
+- **Scoreboard:** a monitor on the register file write port and one on the data memory port feed a scoreboard that compares the DUT's writes to the model's, in order.
+- **Stimulus:** a constrained-random program generator. Most instructions are random, but source registers are biased toward values written 1, 2, or 3 instructions earlier, so the bypass paths and the load-use stall get exercised. About a fifth of the arithmetic instructions use the corner values 0, 1, -1, `INT_MIN`, and `INT_MAX`. Directed streams cover `setx`/`bex` and loads/stores whose base register was just changed.
+- **Coverage:** a covergroup is sampled on every instruction the model executes: opcode, exception code, hazard distance per operand, load-use, `bex` taken / not taken against how recently `$r30` was written, and every pair of corner operands for `add`, `sub`, `mul`, and `div`.
+
+### Results
+
+200 random programs on VCS W-2024.09, plus the 41 directed programs from the course:
+
+| Metric | Result |
+| :--- | :--- |
+| Random seeds passing | 200 / 200 |
+| Directed programs passing | 41 / 41 |
+| Functional coverage | 100% (196 / 196 bins: 40 coverpoint, 156 cross) |
+| Line coverage | 98.45% |
+| Branch coverage | 88.14% |
+| Condition coverage | 80.50% |
+| Toggle coverage | 74.45% |
+
+Code coverage is measured on the processor and register file only, not the testbench. Most of the remaining branch and condition gaps are the `j`, `jal`, `jr`, `bne`, and `blt` paths, which the random generator doesn't produce yet.
+
+| Cross | Bins | What it shows |
+| :--- | :--- | :--- |
+| `op_x_dist_rs` | 48 | Every instruction type read a register written 1, 2, 3, or 4+ instructions earlier (memory bypass, writeback bypass, and register file) |
+| `bex_x_dist_rs` | 8 | `bex` taken and not taken, against how many instructions back `$r30` was written |
+| `op_x_a_x_b` | 100 | `add`, `sub`, `mul`, and `div` with every pair of operands from {0, 1, -1, `INT_MIN`, `INT_MAX`} |
+
+![Functional coverage report](uvm/docs/img/functional_coverage.png)
+
+### Bugs found
+
+All five passed the 41 directed programs and were caught by random programs.
+
+| Bug | Cause | Fix |
+| :--- | :--- | :--- |
+| `mul` missed the overflow exception for `INT_MIN` times a positive number | The radix-4 Booth accumulator was too narrow to hold the 2A partial product | Widened the accumulator by 2 bits and took the carry from the operands' sign bits |
+| An instruction right after `setx` read the wrong `$r30` | `setx`'s value wasn't forwarded from the memory stage, so the bypass sent the ALU output instead | Forward `setx`'s target from the memory stage |
+| `bex` branched when `$r30` was about to become 0 | `bex` resolved in decode and treated any pending write to `$r30` as nonzero | Resolve `bex` in execute through the bypass network, like `bne` and `blt` |
+| A flushed instruction wrote an exception code to `$r30` | A flush turned the instruction into a nop but kept its operands. The nop is `add $0, $0, $0`, so it added the stale operands and could overflow | No exception for a nop |
+| `setx` sometimes wrote 3 to `$r30` instead of its value | Exceptions were raised from `x_overflow` and bits [6:2] without checking the instruction type, so a `setx`, `bex`, or branch whose bits looked like `sub` raised "sub overflow" | Overflow codes only for R-type `add`/`sub` and for `addi` |
+
+### Running it
+
+```bash
+cd uvm
+make sim TEST=rand_test SEED=1                               # one random program
+make regress TESTS=rand_test SEEDS="$(seq -s ' ' 1 200)"     # 200 seeds
+make cov                                                     # merged coverage report
+```
+
+The Makefile uses VCS when `vcs` is on the PATH and xsim otherwise (`SIM=vcs` or `SIM=xsim` to choose). More detail is in [`uvm/README.md`](uvm/README.md).
 
 ## Self-playing guitar
 
@@ -182,7 +235,7 @@ cd final-project/vga && python PicToMem.py slide.png
 
 ## Tools
 
-Icarus Verilog for simulation, GTKWave for viewing waveforms, Vivado for synthesis, and Python 3 for the assembler and memory image scripts.
+Icarus Verilog for the module testbenches, Synopsys VCS and Vivado xsim for the UVM testbench, GTKWave for viewing waveforms, Vivado for synthesis, and Python 3 for the assembler and memory image scripts.
 
 ## Credits
 
