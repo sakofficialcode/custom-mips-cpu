@@ -41,11 +41,11 @@ lw_stall_one_cycle: assert property (@(negedge clock) disable iff (reset) stall_
 multdiv_onehot: assert property (@(posedge clock) disable iff (reset) ~(ctrl_MULT && ctrl_DIV))
     else `uvm_error("PROC_ASSERT", "Only one of MULT / DIV can be high at once");
 
-mult_latency: assert property (@(posedge clock) disable iff (reset) ctrl_MULT |-> ##[1:17] $rose(multdiv_ready))
-    else `uvm_error("PROC_ASSERT", "MULT should take 1-17 cycles to complete");
+mult_latency: assert property (@(posedge clock) disable iff (reset) ctrl_MULT |=> ##17 $rose(multdiv_ready))
+    else `uvm_error("PROC_ASSERT", "MULT should take 17 cycles to complete");
 
-div_latency: assert property (@(posedge clock) disable iff (reset) ctrl_DIV |-> ##[1:33] $rose(multdiv_ready))
-    else `uvm_error("PROC_ASSERT", "DIV should take 1-33 cycles to complete");
+div_latency: assert property (@(posedge clock) disable iff (reset) ctrl_DIV |=> ##33 $rose(multdiv_ready))
+    else `uvm_error("PROC_ASSERT", "DIV should take 33 cycles to complete");
 
 exc_writes_status: assert property (@(posedge clock) disable iff (reset) w_isException |-> ctrl_writeEnable && ctrl_writeReg == 5'd30)
     else `uvm_error("PROC_ASSERT", "Exception should write to status register");
