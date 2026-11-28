@@ -48,6 +48,8 @@ module  tb_top;
         .q_dmem(dmem.q)
     );
 
+    bind processor proc_sva u_sva (.*);
+
     regfile RegFile(
         .clock(clock),
         .ctrl_reset(rst),
