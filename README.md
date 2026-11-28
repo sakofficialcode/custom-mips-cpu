@@ -1,11 +1,11 @@
 # custom-mips-cpu
 
-A 32-bit, 5-stage pipelined MIPS-style processor written in structural Verilog, verified with a constrained-random UVM testbench that found and fixed 5 RTL bugs. Built a self-playing guitar controlled by the processor.
+A 32-bit, 5-stage pipelined MIPS-style processor written in structural Verilog, verified with a constrained-random UVM testbench and SVA assertions that found and fixed 6 RTL bugs. Built a self-playing guitar controlled by the processor.
 
 | Directory | Contents |
 | :--- | :--- |
 | [`proc/`](proc/) | The processor, organized by checkpoint (ALU, regfile, multdiv, full CPU) |
-| [`uvm/`](uvm/) | The UVM testbench: constrained-random program generator, instruction-set simulator, scoreboard, and functional coverage |
+| [`uvm/`](uvm/) | The UVM testbench: constrained-random program generator, instruction-set simulator, scoreboard, functional coverage, and SVA assertions |
 | [`final-project/`](final-project/) | The self-playing guitar: Vivado project, player program, songs, and VGA assets |
 
 ## Processor
@@ -71,6 +71,7 @@ The full processor is verified with a UVM testbench in [`uvm/`](uvm/). It runs o
 - **Scoreboard:** a monitor on the register file write port and one on the data memory port feed a scoreboard that compares the DUT's writes to the model's, in order.
 - **Stimulus:** a constrained-random program generator. Most instructions are random, but source registers are biased toward values written 1, 2, or 3 instructions earlier, so the bypass paths and the load-use stall get exercised. About a fifth of the arithmetic instructions use the corner values 0, 1, -1, `INT_MIN`, and `INT_MAX`. Directed streams cover `setx`/`bex` and loads/stores whose base register was just changed.
 - **Coverage:** a covergroup is sampled on every instruction the model executes: opcode, exception code, hazard distance per operand, load-use, `bex` taken / not taken against how recently `$r30` was written, and every pair of corner operands for `add`, `sub`, `mul`, and `div`.
+- **Assertions:** SVA bound into the processor checks pipeline rules the scoreboard can't see: stalls hold the fetch/decode registers, a load-use stall lasts one cycle, only arithmetic instructions raise exceptions and nops never do, `mul`/`div` take exactly 17/33 cycles, and no X reaches the register file, data memory, or PC. The stall and exception assertions were checked by breaking the RTL on purpose and watching them fire.
 
 ### Results
 
@@ -98,7 +99,7 @@ Code coverage is measured on the processor and register file only, not the testb
 
 ### Bugs found
 
-All five passed the 41 directed programs and were caught by random programs.
+All six passed the 41 directed programs. The first five were caught by the scoreboard on random programs, the sixth by an assertion.
 
 | Bug | Cause | Fix |
 | :--- | :--- | :--- |
@@ -107,6 +108,7 @@ All five passed the 41 directed programs and were caught by random programs.
 | `bex` branched when `$r30` was about to become 0 | `bex` resolved in decode and treated any pending write to `$r30` as nonzero | Resolve `bex` in execute through the bypass network, like `bne` and `blt` |
 | A flushed instruction wrote an exception code to `$r30` | A flush turned the instruction into a nop but kept its operands. The nop is `add $0, $0, $0`, so it added the stale operands and could overflow | No exception for a nop |
 | `setx` sometimes wrote 3 to `$r30` instead of its value | Exceptions were raised from `x_overflow` and bits [6:2] without checking the instruction type, so a `setx`, `bex`, or branch whose bits looked like `sub` raised "sub overflow" | Overflow codes only for R-type `add`/`sub` and for `addi` |
+| `sw`, `lw`, or `setx` could raise a `mul`/`div` exception | The multdiv counter keeps running after an operation, so `ready` pulses again every 32 or 64 cycles, and the `mul`/`div` exception check only looked at bits [6:2] | `mul`/`div` codes only for R-type instructions |
 
 ### Running it
 

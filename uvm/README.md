@@ -34,6 +34,7 @@ make cov                                                    # merged coverage re
 | `proc_iss` | Instruction-set simulator; predicts every register write and store, and logs each executed instruction as an `exec_item` |
 | `proc_scoreboard` | Compares DUT writes to the ISS in order; replays `exec_item`s to coverage |
 | `proc_cov` | `uvm_subscriber` with the functional covergroup |
+| `tb/sva/proc_sva.sv` | SVA checker, bound into `processor` from `tb_top`; failures report as `UVM_ERROR` |
 
 The top module is `tb_top`, or pass `TOP=`. The Makefile finds `.sv`/`.svh` files under `tb/`
 for rebuild tracking and puts every subdirectory on the `` `include `` path.
@@ -141,5 +142,6 @@ uvm/
 └── tb/
     ├── tb_top.sv
     ├── if/                imem, dmem, regfile interfaces
+    ├── sva/               proc_sva assertions
     └── pkg/               proc_pkg and the classes listed under Testbench
 ```
