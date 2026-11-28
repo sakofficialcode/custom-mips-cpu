@@ -188,7 +188,7 @@ module processor(
     multdiv MULTDIV(.data_operandA(x_a_bypass), .data_operandB(x_b_bypass), .ctrl_MULT(ctrl_MULT), .ctrl_DIV(ctrl_DIV), .clock(clock), .reset(reset), .data_result(multdiv_out), .data_exception(multdiv_exception), .data_resultRDY(multdiv_ready));
 
     wire [31:0] x_exception;
-    assign x_exception = ~|dxinsn_out ? 32'b0 : x_overflow ? (x_isI & x_isADDI) ? 32'h00000002 : (~|(5'b0^aluOp) & x_isALU) ? 32'h00000001 : (~|(5'b00001^aluOp) & x_isALU)? 32'h00000003 :  32'b0 : (multdiv_exception & multdiv_ready) ? ~|(5'b00110^aluOp) ? 32'h00000004 : ~|(5'b00111^aluOp) ? 32'h00000005 : 32'b0  : 32'b0;
+    assign x_exception = ~|dxinsn_out ? 32'b0 : x_overflow ? (x_isI & x_isADDI) ? 32'h00000002 : (~|(5'b0^aluOp) & x_isALU) ? 32'h00000001 : (~|(5'b00001^aluOp) & x_isALU)? 32'h00000003 :  32'b0 : (multdiv_exception & multdiv_ready & x_isALU) ? ~|(5'b00110^aluOp) ? 32'h00000004 : ~|(5'b00111^aluOp) ? 32'h00000005 : 32'b0  : 32'b0;
 
     assign stall_lw = x_isLW & (~|(ctrl_readRegA^dxinsn_out[26:22]) | (~|(ctrl_readRegB^dxinsn_out[26:22]) & ~d_isSW)) & |(dxinsn_out[26:22]);
 

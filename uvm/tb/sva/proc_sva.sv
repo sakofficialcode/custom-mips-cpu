@@ -26,10 +26,10 @@ localparam logic [4:0]  ADD = 5'b00000,
 
 
 
-nop_no_exception: assert property (@(posedge clock) disable iff (reset) (~|dxinsn_out |-> ~|x_exception))
+nop_no_exception: assert property (@(negedge clock) disable iff (reset) (~|dxinsn_out |-> ~|x_exception))
     else `uvm_error("PROC_ASSERT", $sformatf("NOP instruction should not cause exception, dxinsn_out=%h, x_exception=%h", dxinsn_out, x_exception));
 
-exc_is_arith: assert property (@(posedge clock) disable iff (reset) x_exception |-> (x_isALU && aluOp inside {ADD, SUB, MUL, DIV}) || x_isADDI) 
+exc_is_arith: assert property (@(negedge clock) disable iff (reset) x_exception |-> (x_isALU && aluOp inside {ADD, SUB, MUL, DIV}) || x_isADDI) 
     else `uvm_error("PROC_ASSERT", $sformatf("Exception should only be caused by arithmetic instructions, dxinsn_out=%h, x_exception=%h", dxinsn_out, x_exception));
 
 stall_stable_pc: assert property (@(negedge clock) disable iff (reset) stall |=> $stable(fdpc_out) && $stable(fdinsn_out))
